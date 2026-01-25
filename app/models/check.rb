@@ -2,12 +2,14 @@ class Check < ApplicationRecord
   belongs_to :user
   belongs_to :zone
   
-  # Связь для загрузки фото
-  has_many_attached :photos
+  has_one :analysis_result, dependent: :destroy 
+  
+  # Связь для загрузки ОДНОГО фото
+  has_one_attached :photo
   
   # Валидации
   validates :zone_id, presence: true
- # validate :validate_photos
+  #validate :validate_photo
   
   # Простые методы для статуса
   def status_text
@@ -45,25 +47,49 @@ class Check < ApplicationRecord
   
   private
   
-  def validate_photos
-    if photos.attached?
-      # Проверяем количество фото (например, от 1 до 3)
-      if photos.length > 3
-        errors.add(:photos, "не может быть больше 3 фотографий")
+  def validate_photo
+    if photo.attached?
+      # Проверяем тип файла
+      allowed_types = %w[image/jpeg image/jpg image/png image/heic image/heif]
+      unless photo.blob.content_type.in?(allowed_types)
+        errors.add(:photo, "должно быть JPEG, PNG или HEIC")
       end
       
-      # Проверяем тип файла
-      photos.each do |photo|
-        unless photo.content_type.in?(%w(image/jpeg image/png image/jpg))
-          errors.add(:photos, "должны быть JPEG или PNG")
-        end
-        
-        if photo.blob.byte_size > 5.megabytes
-          errors.add(:photos, "каждое фото должно быть меньше 5MB")
-        end
+      # Проверяем размер (5MB максимум)
+      if photo.blob.byte_size > 5.megabytes
+        errors.add(:photo, "должно быть меньше 5MB")
       end
     else
-      errors.add(:photos, "не может быть пустым")
+      errors.add(:photo, "обязательно для проверки")
     end
+  end
+  
+  # Методы для статистики
+  def self.today_count
+    where(created_at: Time.current.beginning_of_day..Time.current.end_of_day).count
+  end
+  
+  def self.this_week_count
+    where(created_at: 1.week.ago..Time.current).count
+  end
+  
+  def self.approval_rate
+    total = count
+    return 0 if total.zero?
+    
+    (where(status: 2).count.to_f / total * 100).round(2)
+  end
+  
+  def self.average_processing_time
+    processed = where(status: [2, 3]).where.not(submitted_at: nil, completed_at: nil)
+    return 0 if processed.empty?
+    
+    times = processed.map { |c| c.completed_at - c.submitted_at }
+    (times.sum / times.count).round(2)
+  end
+  
+  def processing_time
+    return nil unless completed_at && submitted_at
+    (completed_at - submitted_at).round(2)
   end
 end

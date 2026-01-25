@@ -1,0 +1,2 @@
+class SystemError < ApplicationRecord
+end

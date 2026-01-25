@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2025_12_06_170219) do
+ActiveRecord::Schema[8.1].define(version: 2025_12_07_144853) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -42,6 +42,32 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_06_170219) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "analysis_results", force: :cascade do |t|
+    t.bigint "check_id", null: false
+    t.float "confidence_score"
+    t.datetime "created_at", null: false
+    t.jsonb "detected_objects"
+    t.text "feedback"
+    t.boolean "is_approved"
+    t.jsonb "issues"
+    t.string "ml_model_version"
+    t.datetime "updated_at", null: false
+    t.index ["check_id"], name: "index_analysis_results_on_check_id"
+  end
+
+  create_table "api_logs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.string "method"
+    t.json "params"
+    t.string "path"
+    t.integer "status"
+    t.datetime "updated_at", null: false
+    t.string "user_agent"
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_api_logs_on_user_id"
+  end
+
   create_table "checks", force: :cascade do |t|
     t.datetime "completed_at"
     t.datetime "created_at", null: false
@@ -54,6 +80,37 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_06_170219) do
     t.bigint "zone_id", null: false
     t.index ["user_id"], name: "index_checks_on_user_id"
     t.index ["zone_id"], name: "index_checks_on_zone_id"
+  end
+
+  create_table "security_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.json "details"
+    t.string "event_type"
+    t.string "ip_address"
+    t.datetime "updated_at", null: false
+    t.string "user_agent"
+  end
+
+  create_table "system_errors", force: :cascade do |t|
+    t.text "backtrace"
+    t.json "context"
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.text "error_message"
+    t.text "resolution_notes"
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "user_logs", force: :cascade do |t|
+    t.string "action"
+    t.datetime "created_at", null: false
+    t.json "details"
+    t.string "ip_address"
+    t.datetime "updated_at", null: false
+    t.string "user_agent"
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_user_logs_on_user_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -79,6 +136,9 @@ ActiveRecord::Schema[8.1].define(version: 2025_12_06_170219) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "analysis_results", "checks"
+  add_foreign_key "api_logs", "users"
   add_foreign_key "checks", "users"
   add_foreign_key "checks", "zones"
+  add_foreign_key "user_logs", "users"
 end

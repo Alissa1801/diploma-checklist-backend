@@ -1,3 +1,4 @@
+# config/routes.rb
 Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
@@ -11,11 +12,15 @@ Rails.application.routes.draw do
       # Чек-листы
       resources :checks, only: [:index, :create, :show]
       
-      # Дашборд (добавим позже)
-      namespace :dashboard do
-        get 'stats', to: 'dashboard#stats'
-        get 'recent_checks', to: 'dashboard#recent_checks'
-      end
+      # Анализ нейросети
+      get 'analysis/:check_id', to: 'analysis#show'
+      post 'analysis/:check_id/analyze', to: 'analysis#analyze'
+
+      # Дашборд - убрали namespace, используем прямую ссылку
+      get 'dashboard/stats', to: 'dashboard#stats'
+      get 'dashboard/daily_stats', to: 'dashboard#daily_stats'
+      get 'dashboard/user_stats', to: 'dashboard#user_stats'
+      get 'dashboard/zone_stats', to: 'dashboard#zone_stats'
     end
   end
   

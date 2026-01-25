@@ -24,6 +24,17 @@ class User < ApplicationRecord
     JWT.encode(payload, secret, 'HS256')
   end
   
+  # Метод для проверки является ли пользователь администратором
+  def admin?
+    # Проверяем по email (пока что простой способ)
+    email == 'admin@example.com'
+  end
+  
+  # Метод для получения полного имени
+  def full_name
+    "#{first_name} #{last_name}"
+  end
+
   private
   
   def downcase_email
