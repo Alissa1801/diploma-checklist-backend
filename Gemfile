@@ -29,7 +29,7 @@ gem "thruster", require: false
 # Аутентификация
 gem 'devise'
 gem 'devise-jwt'
-gem 'bcrypt', '~> 3.1.7'
+gem 'bcrypt', '~> 3.1.21'
 
 # CORS для API
 gem 'rack-cors'
