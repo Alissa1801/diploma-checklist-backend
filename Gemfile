@@ -43,7 +43,7 @@ gem 'redis'
 
 # Работа с изображениями (УДАЛИЛИ ПОВТОР image_processing)
 # gem "ruby-vips"
-gem 'mini_magick', '~> 4.11'  # или измените на просто gem 'mini_magick'
+gem 'mini_magick', '~> 5.3'   # или измените на просто gem 'mini_magick'
 
 # Документация API
 gem 'rswag'
