@@ -1,50 +1,38 @@
 module Api
   module V1
     class DashboardController < ApplicationController
-      before_action :require_admin
+      before_action :require_admin, except: [:personal_stats]
       before_action :log_request
+      before_action :authorize_personal_stats, only: [:personal_stats]
       
+      # Общая статистика для администратора (GET /api/v1/dashboard/stats)
       def stats
         begin
-          total_checks = Check.count
-          approved_checks = Check.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
-          rejected_checks = Check.joins(:analysis_result).where(analysis_results: { is_approved: false }).count
-          pending_checks = Check.left_joins(:analysis_result).where(analysis_results: { id: nil }).count
+          date_range = get_date_range(params[:period])
           
-          avg_score = AnalysisResult.where.not(confidence_score: nil).average(:confidence_score)&.round(2) || 0
+          # Базовая выборка чеков с учетом периода
+          base_checks = Check.all
+          base_checks = base_checks.where(created_at: date_range) if date_range
+
+          total_checks = base_checks.count
+          approved_checks = base_checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
+          rejected_checks = base_checks.joins(:analysis_result).where(analysis_results: { is_approved: false }).count
+          pending_checks = base_checks.left_joins(:analysis_result).where(analysis_results: { id: nil }).count
           
-          checks_with_photo = Check.joins(:photo_attachment).count
-          total_photos = ActiveStorage::Attachment.where(record_type: 'Check', name: 'photo').count  # только photo
+          # Расчет среднего балла
+          avg_score = AnalysisResult.joins(:check)
+                                   .where(checks: { id: base_checks.select(:id) })
+                                   .where.not(confidence_score: nil)
+                                   .average(:confidence_score)&.round(2) || 0
           
-          active_users = User.joins(:checks).distinct.count
+          checks_with_photo = base_checks.joins(:photo_attachment).count
+          active_users_count = base_checks.distinct.pluck(:user_id).compact.count
           
-          recent_checks = Check.includes(:user, :zone, :analysis_result)
-                              .order(created_at: :desc)
-                              .limit(10)
-                              .map do |check|
-                                {
-                                  id: check.id,
-                                  user_email: check.user&.email || 'Unknown',
-                                  user_name: check.user ? "#{check.user.first_name} #{check.user.last_name}" : 'Unknown',
-                                  zone_name: check.zone&.name || 'Unknown',
-                                  status: check.analysis_result&.approved? ? 'approved' : check.analysis_result ? 'rejected' : 'pending',
-                                  score: check.analysis_result&.confidence_score,
-                                  # ИЗМЕНЕНИЕ: photo_count -> has_photo
-                                  has_photo: check.photo.attached?,
-                                  photo_url: check.photo.attached? ? rails_blob_url(check.photo) : nil,
-                                  submitted_at: check.submitted_at,
-                                  feedback: check.analysis_result&.feedback,
-                                  confidence: check.analysis_result&.confidence_score
-                                }
-                              end
-          
-          # Логируем запрос статистики
-          if defined?(LoggingService)
-            LoggingService.log_user_action(current_user, 'get_dashboard_stats', {
-              total_checks: total_checks,
-              approved_checks: approved_checks
-            })
-          end
+          # Список последних проверок
+          recent_checks = base_checks.includes(:user, :zone, :analysis_result)
+                                     .order(created_at: :desc)
+                                     .limit(10)
+                                     .map { |check| format_check_data(check) }
           
           render json: {
             success: true,
@@ -58,170 +46,220 @@ module Api
               },
               quality: {
                 average_score: avg_score,
-                checks_with_photo: checks_with_photo,  # исправлено имя
-                total_photos: total_photos,
-                photos_per_check: total_checks > 0 ? (total_photos.to_f / total_checks).round(2) : 0
+                checks_with_photo: checks_with_photo,
+                photos_per_check: total_checks > 0 ? (checks_with_photo.to_f / total_checks).round(2) : 0
               },
               users: {
                 total_users: User.count,
-                active_users: active_users,
-                checks_per_user: active_users > 0 ? (total_checks.to_f / active_users).round(2) : 0
+                active_users: active_users_count,
+                checks_per_user: active_users_count > 0 ? (total_checks.to_f / active_users_count).round(2) : 0
               },
               recent_checks: recent_checks,
               timestamp: Time.current
             }
           }
         rescue => e
-          Rails.logger.error("Error in dashboard stats: #{e.message}")
-          if defined?(LoggingService)
-            LoggingService.log_error(e, { action: 'dashboard_stats' })
-          end
-          render json: { success: false, error: e.message }, status: :internal_server_error
+          render_error(e, 'dashboard_stats')
         end
       end
       
+      # Личная статистика пользователя (GET /api/v1/dashboard/personal_stats)
+      def personal_stats
+        begin
+          user = User.find(params[:user_id])
+          date_range = get_date_range(params[:period])
+          
+          # Выборка чеков конкретного пользователя
+          user_checks = user.checks
+          user_checks = user_checks.where(created_at: date_range) if date_range
+
+          total_checks = user_checks.count
+          approved_checks = user_checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
+          rejected_checks = user_checks.joins(:analysis_result).where(analysis_results: { is_approved: false }).count
+          pending_checks = user_checks.left_joins(:analysis_result).where(analysis_results: { id: nil }).count
+          
+          avg_score = AnalysisResult.joins(:check)
+                                   .where(checks: { user_id: user.id, id: user_checks.select(:id) })
+                                   .where.not(confidence_score: nil)
+                                   .average(:confidence_score)&.round(2) || 0
+          
+          recent_personal_checks = user_checks.includes(:zone, :analysis_result)
+                                             .order(created_at: :desc)
+                                             .limit(10)
+                                             .map { |check| format_check_data(check, user) }
+          
+          # Статистика по зонам
+          zones_stats = Zone.joins(:checks)
+                           .where(checks: { user_id: user.id, id: user_checks.select(:id) })
+                           .distinct
+                           .map do |zone|
+                             zone_total = zone.checks.where(user_id: user.id, id: user_checks.select(:id)).count
+                             zone_approved = zone.checks.joins(:analysis_result)
+                                                 .where(user_id: user.id, id: user_checks.select(:id), analysis_results: { is_approved: true }).count
+                             {
+                               id: zone.id,
+                               name: zone.name,
+                               total_checks: zone_total,
+                               approved_checks: zone_approved,
+                               approval_rate: zone_total > 0 ? (zone_approved.to_f / zone_total * 100).round(2) : 0
+                             }
+                           end
+
+          render json: {
+            success: true,
+            user_info: {
+              id: user.id,
+              email: user.email,
+              name: user.full_name,
+              role: user.role
+            },
+            stats: {
+              overview: {
+                total_checks: total_checks,
+                approved: approved_checks,
+                rejected: rejected_checks,
+                pending: pending_checks,
+                approval_rate: total_checks > 0 ? (approved_checks.to_f / total_checks * 100).round(2) : 0
+              },
+              quality: {
+                average_score: avg_score,
+                checks_with_photo: user_checks.joins(:photo_attachment).count
+              },
+              zones: zones_stats,
+              recent_checks: recent_personal_checks,
+              timestamp: Time.current
+            }
+          }
+        rescue ActiveRecord::RecordNotFound
+          render json: { success: false, error: 'User not found' }, status: :not_found
+        rescue => e
+          render_error(e, 'personal_stats')
+        end
+      end
+
+      # Статистика по дням (для графиков)
       def daily_stats
         begin
           end_date = Time.current
           start_date = 7.days.ago
           
           daily_data = (start_date.to_date..end_date.to_date).map do |date|
-            day_start = date.beginning_of_day
-            day_end = date.end_of_day
-            
-            day_checks = Check.where(created_at: day_start..day_end)
+            day_checks = Check.where(created_at: date.all_day)
             day_approved = day_checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
-            day_rejected = day_checks.joins(:analysis_result).where(analysis_results: { is_approved: false }).count
             
             {
               date: date.strftime('%Y-%m-%d'),
               day_name: date.strftime('%a'),
               total_checks: day_checks.count,
               approved: day_approved,
-              rejected: day_rejected,
               approval_rate: day_checks.count > 0 ? (day_approved.to_f / day_checks.count * 100).round(2) : 0
             }
           end
           
-          render json: {
-            success: true,
-            period: {
-              start_date: start_date.strftime('%Y-%m-%d'),
-              end_date: end_date.strftime('%Y-%m-%d'),
-              days: 7
-            },
-            daily_stats: daily_data
-          }
+          render json: { success: true, daily_stats: daily_data }
         rescue => e
-          Rails.logger.error("Error in daily stats: #{e.message}")
-          if defined?(LoggingService)
-            LoggingService.log_error(e, { action: 'daily_stats' })
-          end
-          render json: { success: false, error: 'Failed to get daily statistics' }, status: :internal_server_error
+          render_error(e, 'daily_stats')
         end
       end
-      
+
+      # Рейтинг пользователей
       def user_stats
         begin
-          users_stats = User.includes(:checks)
-                           .where.not(checks: { id: nil })
+          users_stats = User.includes(:checks).where.not(role: 'admin')
                            .map do |user|
-                             user_checks = user.checks
-                             approved = user_checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
-                             total = user_checks.count
+                             total = user.checks.count
+                             next if total == 0
+                             approved = user.checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
                              
                              {
                                id: user.id,
                                email: user.email,
-                               name: "#{user.first_name} #{user.last_name}",
+                               name: user.full_name,
                                total_checks: total,
                                approved_checks: approved,
-                               approval_rate: total > 0 ? (approved.to_f / total * 100).round(2) : 0,
-                               last_check: user_checks.maximum(:created_at),
-                               avg_score: AnalysisResult.joins(:check)
-                                                       .where(checks: { user_id: user.id })
-                                                       .where.not(confidence_score: nil)
-                                                       .average(:confidence_score)&.round(2) || 0
+                               approval_rate: (approved.to_f / total * 100).round(2)
                              }
-                           end
-                           .sort_by { |u| -u[:total_checks] }
+                           end.compact.sort_by { |u| -u[:total_checks] }
           
-          render json: {
-            success: true,
-            total_users: User.count,
-            users_with_checks: users_stats.count,
-            users: users_stats
-          }
+          render json: { success: true, users: users_stats }
         rescue => e
-          Rails.logger.error("Error in user stats: #{e.message}")
-          if defined?(LoggingService)
-            LoggingService.log_error(e, { action: 'user_stats' })
-          end
-          render json: { success: false, error: 'Failed to get user statistics' }, status: :internal_server_error
+          render_error(e, 'user_stats')
         end
       end
-      
+
+      # Статистика по зонам
       def zone_stats
         begin
           zones_stats = Zone.all.map do |zone|
-            zone_checks = Check.where(zone_id: zone.id)
-            approved = zone_checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
-            total = zone_checks.count
-            
+            total = zone.checks.count
+            approved = zone.checks.joins(:analysis_result).where(analysis_results: { is_approved: true }).count
             {
               id: zone.id,
               name: zone.name,
-              description: zone.description,
               total_checks: total,
               approved_checks: approved,
-              rejection_rate: total > 0 ? ((total - approved).to_f / total * 100).round(2) : 0,
-              common_issues: AnalysisResult.joins(:check)
-                                          .where(checks: { zone_id: zone.id })
-                                          .where.not(issues: [])
-                                          .pluck(:issues)
-                                          .flatten
-                                          .tally
-                                          .sort_by { |_, count| -count }
-                                          .first(5)
-                                          .map { |issue, count| { issue: issue, count: count } }
+              rejection_rate: total > 0 ? (((total - approved).to_f / total) * 100).round(2) : 0
             }
           end
-          
-          render json: {
-            success: true,
-            total_zones: Zone.count,
-            zones: zones_stats
-          }
+          render json: { success: true, zones: zones_stats }
         rescue => e
-          Rails.logger.error("Error in zone stats: #{e.message}")
-          if defined?(LoggingService)
-            LoggingService.log_error(e, { action: 'zone_stats' })
-          end
-          render json: { success: false, error: 'Failed to get zone statistics' }, status: :internal_server_error
+          render_error(e, 'zone_stats')
         end
       end
-      
+
       private
-      
-      def require_admin
-        unless current_user&.admin?
-          if defined?(LoggingService)
-            LoggingService.log_security_event('unauthorized_dashboard_access', {
-              user_id: current_user&.id,
-              user_email: current_user&.email,
-              ip_address: request.remote_ip
-            })
-          end
-          
-          render json: { error: 'Access denied. Admin only.' }, status: :forbidden
+
+      # Определение временного диапазона
+      def get_date_range(period)
+        case period
+        when 'day'
+          Time.current.all_day
+        when 'week'
+          Time.current.all_week
+        when 'month'
+          Time.current.all_month
+        else
+          nil
         end
       end
-      
-      def log_request
-        # Логируем API запрос
-        if defined?(LoggingService)
-          LoggingService.log_api_request(request, response, current_user)
+
+      # Единый формат для RecentCheck
+      def format_check_data(check, user = nil)
+        target_user = user || check.user
+        {
+          id: check.id,
+          user_email: target_user&.email || 'Unknown',
+          user_name: target_user&.full_name || 'Unknown',
+          zone_name: check.zone&.name || 'Unknown',
+          status: check.analysis_result&.approved? ? 'approved' : (check.analysis_result ? 'rejected' : 'pending'),
+          score: check.analysis_result&.confidence_score,
+          has_photo: check.photo.attached?,
+          photo_url: check.photo.attached? ? rails_blob_url(check.photo) : nil,
+          submitted_at: check.submitted_at,
+          feedback: check.analysis_result&.feedback,
+          confidence: check.analysis_result&.confidence_score
+        }
+      end
+
+      def render_error(e, action_name)
+        Rails.logger.error("Error in #{action_name}: #{e.message}")
+        LoggingService.log_error(e, { action: action_name }) if defined?(LoggingService)
+        render json: { success: false, error: "Internal Server Error" }, status: :internal_server_error
+      end
+
+      def require_admin
+        render json: { error: 'Access denied' }, status: :forbidden unless current_user&.admin?
+      end
+
+      def authorize_personal_stats
+        user_id = params[:user_id].to_i
+        unless current_user && (current_user.id == user_id || current_user.admin?)
+          render json: { error: 'Access denied' }, status: :forbidden
         end
+      end
+
+      def log_request
+        LoggingService.log_api_request(request, response, current_user) if defined?(LoggingService)
       end
     end
   end

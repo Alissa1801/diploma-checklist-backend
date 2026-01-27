@@ -4,6 +4,7 @@ Rails.application.routes.draw do
     namespace :v1 do
       # Аутентификация
       post 'auth/login', to: 'auth#login'
+      post 'auth/refresh', to: 'auth#refresh'
       post 'auth/logout', to: 'auth#logout'
       
       # Зоны уборки
@@ -21,6 +22,7 @@ Rails.application.routes.draw do
       get 'dashboard/daily_stats', to: 'dashboard#daily_stats'
       get 'dashboard/user_stats', to: 'dashboard#user_stats'
       get 'dashboard/zone_stats', to: 'dashboard#zone_stats'
+      get 'dashboard/personal_stats', to: 'dashboard#personal_stats'
     end
   end
   
