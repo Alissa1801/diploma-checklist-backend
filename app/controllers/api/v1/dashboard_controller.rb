@@ -228,6 +228,7 @@ module Api
         target_user = user || check.user
         {
           id: check.id,
+          room_number: check.room_number,
           user_email: target_user&.email || 'Unknown',
           user_name: target_user&.full_name || 'Unknown',
           zone_name: check.zone&.name || 'Unknown',

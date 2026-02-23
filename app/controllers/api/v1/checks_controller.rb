@@ -102,7 +102,7 @@ module Api
       private
       
       def check_params
-        params.permit(:zone_id, :submitted_at)
+        params.permit(:zone_id, :room_number, :submitted_at)
       end
       
       def process_single_photo(check)
