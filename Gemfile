@@ -41,9 +41,10 @@ gem "active_model_serializers"
 gem "sidekiq"
 gem "redis"
 
-# Работа с изображениями (УДАЛИЛИ ПОВТОР image_processing)
+# Работа с изображениями
 # gem "ruby-vips"
-gem "mini_magick", "~> 4.11"  # или измените на просто gem 'mini_magick'
+gem "mini_magick", "~> 4.11"
+gem "image_processing", "~> 1.2"
 
 # Документация API
 gem "rswag"
