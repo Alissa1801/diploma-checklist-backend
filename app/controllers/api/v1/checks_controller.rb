@@ -105,7 +105,7 @@ module Api
         params.permit(:zone_id, :room_number, :submitted_at)
       end
       
-      def process_single_photo(check)
+      def process_single_photo(check)в
         # Получаем фото из параметра :photo
         photo = params[:photo]
         
