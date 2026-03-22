@@ -27,7 +27,7 @@ module Api
 
         LoggingService.log_user_action(current_user, "get_checks_list", { count: checks.count, is_admin: current_user.admin? })
 
-        render json: checks, include: [ :zone, :analysis_result ]
+      render json: checks, include: [ :zone, :analysis_result, :user ], methods: [ :user_name, :status_text ]
       end
 
       def show
@@ -38,7 +38,7 @@ module Api
                   current_user.checks.find(params[:id])
         end
 
-        render json: check, include: [ :zone, :analysis_result, photo_attachment: { blob: :variant_records } ]
+        render json: check, include: [ :zone, :analysis_result, :user, photo_attachment: { blob: :variant_records } ], methods: [ :user_name, :status_text ]
       rescue ActiveRecord::RecordNotFound => e
         LoggingService.log_error(e, { check_id: params[:id], user_id: current_user.id })
         render json: { error: "Check not found" }, status: :not_found
