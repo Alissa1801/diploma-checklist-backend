@@ -62,6 +62,6 @@ test:
 production:
   adapter: postgresql
   encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  pool: 5
   url: postgresql://postgres:kFGojlbWXAhzhOmBbEANbIccNbPYZbzl@postgres.railway.internal:5432/railway
   database: railway
