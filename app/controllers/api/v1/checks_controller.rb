@@ -15,15 +15,28 @@ module Api
       MAX_FILE_SIZE = 5.megabytes
 
       def index
-        checks = current_user.checks.includes(:zone, :analysis_result).order(created_at: :desc)
+        # Если админ — берем все проверки, если нет — только проверки текущего пользователя
+        @checks = if current_user.admin?
+                    Check.all
+        else
+                    current_user.checks
+        end
 
-        LoggingService.log_user_action(current_user, "get_checks_list", { count: checks.count })
+        # Добавляем подгрузку связей и сортировку
+        checks = @checks.includes(:zone, :analysis_result).order(created_at: :desc)
+
+        LoggingService.log_user_action(current_user, "get_checks_list", { count: checks.count, is_admin: current_user.admin? })
 
         render json: checks, include: [ :zone, :analysis_result ]
       end
 
       def show
-        check = current_user.checks.find(params[:id])
+        # Аналогично: админ может найти любую проверку по ID, обычный юзер — только свою
+        check = if current_user.admin?
+                  Check.find(params[:id])
+        else
+                  current_user.checks.find(params[:id])
+        end
 
         render json: check, include: [ :zone, :analysis_result, photo_attachment: { blob: :variant_records } ]
       rescue ActiveRecord::RecordNotFound => e
