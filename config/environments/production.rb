@@ -76,6 +76,8 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [ :id ]
 
+  config.require_master_key = false
+
   config.hosts << ".up.railway.app"
   config.hosts << "diploma-checklist-backend-production.up.railway.app"
 end
