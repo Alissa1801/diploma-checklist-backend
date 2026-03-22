@@ -14,12 +14,7 @@ test:
   database: backend_test
 
 production:
-  primary: &production_db
-    adapter: postgresql
-    url: postgresql://postgres:kFGojlbWXAhzhOmBbEANbIccNbPYZbzl@postgres.railway.internal:5432/railway
-  cable:
-    <<: *production_db
-  cache:
-    <<: *production_db
-  queue:
-    <<: *production_db
+  adapter: postgresql
+  encoding: unicode
+  pool: 5
+  url: postgresql://postgres:kFGojlbWXAhzhOmBbEANbIccNbPYZbzl@postgres.railway.internal:5432/railway

@@ -76,8 +76,12 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [ :id ]
 
-  config.require_master_key = false
-
   config.hosts << ".up.railway.app"
   config.hosts << "diploma-checklist-backend-production.up.railway.app"
+
+  # ПРИНУДИТЕЛЬНО отключаем проверку ключа
+  config.require_master_key = false
+  # ПРИНУДИТЕЛЬНО выводим логи в консоль Railway
+  config.logger = ActiveSupport::Logger.new(STDOUT)
+  config.log_level = :debug
 end
