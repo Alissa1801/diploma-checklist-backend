@@ -27,26 +27,26 @@ gem "thruster", require: false
 # ============== ДОБАВЛЕННЫЕ ГЕМЫ ДЛЯ ПРОЕКТА ==============
 
 # Аутентификация
-gem 'devise'
-gem 'devise-jwt'
-gem 'bcrypt', '~> 3.1.7'
+gem "devise"
+gem "devise-jwt"
+gem "bcrypt", "~> 3.1.7"
 
 # CORS для API
-gem 'rack-cors'
+gem "rack-cors"
 
 # Сериализация JSON
-gem 'active_model_serializers'
+gem "active_model_serializers"
 
 # Фоновые задачи
-gem 'sidekiq'
-gem 'redis'
+gem "sidekiq"
+gem "redis"
 
 # Работа с изображениями (УДАЛИЛИ ПОВТОР image_processing)
 # gem "ruby-vips"
-gem 'mini_magick', '~> 4.11'  # или измените на просто gem 'mini_magick'
+gem "mini_magick", "~> 4.11"  # или измените на просто gem 'mini_magick'
 
 # Документация API
-gem 'rswag'
+gem "rswag"
 
 # ============== ДЛЯ РАЗРАБОТКИ ==============
 group :development, :test do
@@ -61,10 +61,10 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
-  
-  gem 'annotate'
-  gem 'better_errors'
-  gem 'binding_of_caller'
-  gem 'pry-rails'
-  gem 'byebug'
+
+  gem "annotate"
+  gem "better_errors"
+  gem "binding_of_caller"
+  gem "pry-rails"
+  gem "byebug"
 end
