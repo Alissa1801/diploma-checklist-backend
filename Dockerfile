@@ -4,10 +4,9 @@
 ARG RUBY_VERSION=3.2.2
 FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
-# Rails app lives here
 WORKDIR /rails
 
-# AI INTEGRATION: Добавляем python3 и pip в базовый слой
+# 1. Устанавливаем системные пакеты (Python и зависимости для работы с фото)
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
     curl libjemalloc2 libvips postgresql-client \
@@ -15,8 +14,14 @@ RUN apt-get update -qq && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# AI INTEGRATION: Устанавливаем библиотеки для нейросети
-# Используем headless версию opencv, так как на сервере нет монитора (это экономит память)
+# 2. ОПТИМИЗАЦИЯ РАЗМЕРА: Устанавливаем легкую CPU-версию PyTorch (без CUDA)
+# Это уменьшит образ с 8.7ГБ до ~2ГБ
+RUN pip3 install --no-cache-dir \
+    torch==2.2.0+cpu \
+    torchvision==0.17.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+
+# 3. Устанавливаем YOLO и легкий OpenCV
 RUN pip3 install --no-cache-dir ultralytics opencv-python-headless --break-system-packages
 
 ENV RAILS_ENV="production" \
@@ -45,12 +50,13 @@ RUN bundle exec bootsnap precompile -j 1 app/ lib/
 # --- Final Stage ---
 FROM base
 
-# AI INTEGRATION: Создаем папку для результатов анализа в public
-RUN mkdir -p /rails/public/analysis && \
-    groupadd --system --gid 1000 rails && \
-    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash && \
-    chown -R rails:rails /rails/public/analysis
+# Настройка пользователя (папка analysis подхватится из COPY из этапа build или из твоего репозитория)
+RUN groupadd --system --gid 1000 rails && \
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
 
+# Выдаем права на папку, которую ты создала вручную, чтобы Python мог туда записывать
+USER root
+RUN mkdir -p /rails/public/analysis && chown -R rails:rails /rails/public/analysis
 USER 1000:1000
 
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"

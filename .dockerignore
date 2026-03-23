@@ -44,3 +44,5 @@
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*
+
+/public/analysis/*
