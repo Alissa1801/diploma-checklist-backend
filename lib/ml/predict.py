@@ -1,27 +1,40 @@
 import sys
 import json
 import os
+import warnings
+warnings.filterwarnings('ignore') # Убираем лишние предупреждения
+
 from ultralytics import YOLO
 
 def run_prediction(image_path, model_path):
     try:
         model = YOLO(model_path)
-        # Запускаем детекцию
-        results = model.predict(source=image_path, conf=0.3, save=True, project="public/analysis", name="predict", exist_ok=True)
+        # Указываем точный путь для сохранения
+        project_path = "public/analysis"
+        name = "predict"
         
-        # Получаем данные о найденных объектах
+        results = model.predict(
+            source=image_path, 
+            conf=0.3, 
+            save=True, 
+            project=project_path, 
+            name=name, 
+            exist_ok=True,
+            verbose=False # КРИТИЧНО: чтобы в консоль шел только наш JSON
+        )
+        
         result = results[0]
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # Логика одобрения для диплома
-        # Если находим 'pillow_messy' или 'trash' — отклоняем
-        bad_stuff = ['pillow_messy', 'trash'] # замени на свои классы из датасета
+        # Твои классы из датасета
+        bad_stuff = ['pillow_messy', 'trash', 'dirty_floor'] 
         found_issues = [cls for cls in detected_classes if cls in bad_stuff]
         
         is_approved = len(found_issues) == 0
         
-        # Путь к картинке с рамками (сохраняем в public, чтобы iOS видела по ссылке)
-        output_filename = os.path.basename(image_path)
+        # Получаем имя сохраненного файла (YOLO может его переименовать)
+        # Обычно это public/analysis/predict/имя_файла.jpg
+        output_filename = os.path.basename(result.path)
         processed_url = f"/analysis/predict/{output_filename}"
 
         output = {
@@ -32,9 +45,12 @@ def run_prediction(image_path, model_path):
             "feedback": "Check passed" if is_approved else "Issues detected",
             "processed_url": processed_url
         }
-        print(json.dumps(output))
+        # Печатаем ТОЛЬКО JSON
+        sys.stdout.write(json.dumps(output))
+        
     except Exception as e:
-        print(json.dumps({"error": str(e)}))
+        sys.stdout.write(json.dumps({"error": str(e)}))
 
 if __name__ == "__main__":
-    run_prediction(sys.argv[1], sys.argv[2])
+    if len(sys.argv) > 2:
+        run_prediction(sys.argv[1], sys.argv[2])

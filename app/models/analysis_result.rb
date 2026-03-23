@@ -1,51 +1,56 @@
 class AnalysisResult < ApplicationRecord
   belongs_to :check
-  
+
+  def full_processed_url(base_url)
+    return nil if processed_url.blank?
+    "#{base_url}#{processed_url}"
+  end
+
   # Сериализация JSON полей для Rails 8
   attribute :detected_objects, :json, default: []
   attribute :issues, :json, default: []
-  
+
   # Валидации
   validates :confidence_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
   validates :ml_model_version, presence: true
-  
+
   # Хелпер методы
   def approved?
     is_approved
   end
-  
+
   def rejected?
     !is_approved
   end
-  
+
   def confidence_percentage
     confidence_score ? "#{confidence_score}%" : "N/A"
   end
-  
+
   def issue_list
-    issues&.join(', ') || 'No issues'
+    issues&.join(", ") || "No issues"
   end
-  
+
   def detected_objects_summary
     if detected_objects&.any?
-      detected_objects.map { |obj| 
+      detected_objects.map { |obj|
         if obj.is_a?(Hash)
-          "#{obj['name']} (#{obj['count']})"
+          "#{obj["name"]} (#{obj["count"]})"
         else
           obj.to_s
         end
-      }.join(', ')
+      }.join(", ")
     else
-      'No objects detected'
+      "No objects detected"
     end
   end
-  
-  # Добавьте методы для совместимости с контроллером dashboard
+
+  # Методы для совместимости с контроллером dashboard
   def status
-    is_approved ? 'approved' : 'rejected'
+    is_approved ? "approved" : "rejected"
   end
-  
+
   def status_text
-    is_approved ? 'Approved' : 'Rejected'
+    is_approved ? "Approved" : "Rejected"
   end
 end

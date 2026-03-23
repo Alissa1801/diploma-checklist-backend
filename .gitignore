@@ -35,3 +35,6 @@
 *.DS_Store
 config/credentials.yml.enc
 config/master.key
+
+public/analysis/predict/*
+!public/analysis/.keep

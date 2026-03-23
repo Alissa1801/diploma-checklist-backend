@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_22_130930) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_23_185314) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -51,6 +51,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_22_130930) do
     t.boolean "is_approved"
     t.jsonb "issues"
     t.string "ml_model_version"
+    t.string "processed_url"
     t.datetime "updated_at", null: false
     t.index ["check_id"], name: "index_analysis_results_on_check_id"
   end
