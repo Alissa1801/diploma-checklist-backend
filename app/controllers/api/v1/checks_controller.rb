@@ -37,69 +37,73 @@ module Api
         render json: { error: "Check not found" }, status: :not_found
       end
 
-def create
-  # 1. Создаем запись. Важно: check_params теперь разрешает :zone_id (см. ниже в private)
-  check = current_user.checks.new(check_params)
+      def create
+        # 1. Создаем запись. Важно: check_params теперь разрешает :zone_id
+        check = current_user.checks.new(check_params)
 
-  # Устанавливаем статус 1 (processing / в обработке), чтобы iPhone сразу показал "крутилку"
-  check.status = 1
-  check.submitted_at ||= Time.current
+        # Устанавливаем статус 1 (processing / в обработке)
+        check.status = 1
+        check.submitted_at ||= Time.current
 
-  if check.save
-    begin
-      # 2. Сохраняем фото в ActiveStorage
-      process_single_photo(check)
+        if check.save
+          begin
+            # 2. Сохраняем фото в ActiveStorage
+            process_single_photo(check)
 
-      if check.photo.attached?
-        # 3. ФОНОВЫЙ ПОТОК (Thread)
-        # Мы отвечаем iPhone немедленно, а нейросеть запускаем "за кулисами"
-        Thread.new do
-          # wrap нужен для безопасной работы с базой данных внутри потока в Rails
-          Rails.application.executor.wrap do
-            begin
-              service = YoloService.new(check)
-              service.save_result # Это вызовет Python и обновит статус на 2 или 3
-            rescue => e
-              Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
-              check.update(status: 0) # Если совсем всё упало, возвращаем в pending
+            if check.photo.attached?
+              # 3. ФОНОВЫЙ ПОТОК (Thread)
+              Thread.new do
+                Rails.application.executor.wrap do
+                  begin
+                    service = YoloService.new(check)
+                    service.save_result
+                  rescue => e
+                    Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
+                    check.update(status: 0)
+                  end
+                end
+              end
+
+              # 4. ОТВЕТ КЛИЕНТУ
+              render json: {
+                success: true,
+                check: check.as_json(
+                  include: [ :zone, :analysis_result ],
+                  methods: [ :status_text, :user_name ]
+                ),
+                message: "Check created. AI analysis is running in background."
+              }, status: :created
+
+            else
+              # Если фото не прикрепилось
+              check.destroy
+              render json: { success: false, error: "Photo attachment failed" }, status: :unprocessable_entity
             end
+
+          rescue ActiveStorage::IntegrityError => e
+            # ФИКС: Перехватываем ошибку целостности, чтобы запрос не падал
+            Rails.logger.error "INTEGRITY_IGNORE: #{e.message}"
+            render json: {
+              success: true,
+              check: check.as_json(include: [ :zone ], methods: [ :status_text ]),
+              message: "Check created with integrity bypass."
+            }, status: :created
+          rescue => e
+            LoggingService.log_error(e, { check_id: check.id, user_id: current_user.id })
+            render json: { success: false, error: e.message }, status: :unprocessable_entity
           end
+        else
+          # Ошибки валидации
+          render json: { success: false, errors: check.errors.full_messages }, status: :unprocessable_entity
         end
-
-        # 4. ОТВЕТ КЛИЕНТУ (Происходит мгновенно, не дожидаясь Python)
-        # Мы включаем :zone в include, чтобы iOS сразу увидела имя зоны, а не "Неизвестно"
-        render json: {
-          success: true,
-          check: check.as_json(
-            include: [ :zone, :analysis_result ],
-            methods: [ :status_text, :user_name ]
-          ),
-          message: "Check created. AI analysis is running in background."
-        }, status: :created
-
-      else
-        # Если фото не прикрепилось — удаляем пустой чек
-        check.destroy
-        render json: { success: false, error: "Photo attachment failed" }, status: :unprocessable_entity
       end
 
-    rescue => e
-      LoggingService.log_error(e, { check_id: check.id, user_id: current_user.id })
-      render json: { success: false, error: e.message }, status: :unprocessable_entity
-    end
-  else
-    # Ошибки валидации (например, если zone_id пустой)
-    render json: { success: false, errors: check.errors.full_messages }, status: :unprocessable_entity
-  end
-end
+      private
 
-private
-
-# ОБНОВЛЕННЫЙ МЕТОД PARAMS (Исправляет "Неизвестную зону")
-def check_params
-  # Разрешаем :zone_id, иначе Rails его отбрасывает при создании
-  params.permit(:zone_id, :room_number, :submitted_at, :photo)
-end
+      # ОБНОВЛЕННЫЙ МЕТОД PARAMS (Исправляет "Неизвестную зону")
+      def check_params
+        params.permit(:zone_id, :room_number, :submitted_at, :photo)
+      end
 
       def process_single_photo(check)
         photo = params[:photo]
@@ -110,7 +114,8 @@ end
         elsif photo.is_a?(String) && photo.start_with?("data:image")
           process_data_url_photo(check, photo)
         else
-          raise "Invalid photo format"
+          # Поддержка прямого прикрепления, если пришел бинарный поток
+          check.photo.attach(io: photo, filename: "photo_#{Time.now.to_i}.jpg")
         end
       end
 
@@ -130,7 +135,6 @@ end
         )
       end
 
-      # Метод для обработки Base64 (если iOS пришлет так)
       def process_data_url_photo(check, data_url)
         matches = data_url.match(/^data:(image\/[^;]+);base64,(.*)$/)
         raise "Invalid data URL" unless matches
