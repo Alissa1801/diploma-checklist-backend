@@ -2,54 +2,57 @@ import sys
 import json
 import os
 import warnings
-warnings.filterwarnings('ignore') # Убираем лишние предупреждения
+# Устанавливаем кодировку вывода, чтобы кириллица (если будет) не ломала Ruby
+sys.stdout.reconfigure(encoding='utf-8') 
+warnings.filterwarnings('ignore')
 
 from ultralytics import YOLO
 
 def run_prediction(image_path, model_path):
     try:
         model = YOLO(model_path)
-        # Указываем точный путь для сохранения
-        project_path = "public/analysis"
-        name = "predict"
+        
+        # Используем абсолютный путь, чтобы Python точно знал, где корень
+        base_path = os.getcwd() 
+        project_path = os.path.join(base_path, "public", "analysis")
         
         results = model.predict(
             source=image_path, 
-            conf=0.3, 
+            conf=0.25, # Немного снизим порог для более точного поиска мусора
             save=True, 
             project=project_path, 
-            name=name, 
+            name="predict", 
             exist_ok=True,
-            verbose=False # КРИТИЧНО: чтобы в консоль шел только наш JSON
+            verbose=False 
         )
         
         result = results[0]
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # Твои классы из датасета
-        bad_stuff = ['pillow_messy', 'trash', 'dirty_floor'] 
+        # Твои классы
+        bad_stuff = ['pillow_messy', 'trash', 'dirty_floor', 'messy_bed'] 
         found_issues = [cls for cls in detected_classes if cls in bad_stuff]
         
         is_approved = len(found_issues) == 0
         
-        # Получаем имя сохраненного файла (YOLO может его переименовать)
-        # Обычно это public/analysis/predict/имя_файла.jpg
+        # Получаем имя файла. YOLO сохраняет его в project/name/filename
+        # Нам нужно только имя файла для URL
         output_filename = os.path.basename(result.path)
-        processed_url = f"/analysis/predict/{output_filename}"
 
         output = {
             "is_approved": is_approved,
-            "confidence": float(result.boxes.conf[0] * 100) if len(result.boxes.conf) > 0 else 0,
+            "confidence": float(result.boxes.conf.mean() * 100) if len(result.boxes.conf) > 0 else 100.0,
             "objects": [{"name": cls, "count": detected_classes.count(cls)} for cls in set(detected_classes)],
             "issues": found_issues,
-            "feedback": "Check passed" if is_approved else "Issues detected",
-            "processed_url": processed_url
+            "feedback": "Cleanliness standards met" if is_approved else f"Issues found: {', '.join(set(found_issues))}",
+            "processed_url": f"/analysis/predict/{output_filename}"
         }
-        # Печатаем ТОЛЬКО JSON
-        sys.stdout.write(json.dumps(output))
+        
+        # Выводим финальный JSON
+        print(json.dumps(output, ensure_ascii=False))
         
     except Exception as e:
-        sys.stdout.write(json.dumps({"error": str(e)}))
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:
