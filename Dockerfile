@@ -39,7 +39,7 @@ RUN apt-get update -qq && \
     curl libjemalloc2 libvips postgresql-client \
     python3 python3-pip python3-setuptools \
     libgl1 libglib2.0-0 && \
-    ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
+    ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY Gemfile Gemfile.lock vendor ./
