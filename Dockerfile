@@ -33,8 +33,13 @@ ENV RAILS_ENV="production" \
 # --- Build Stage ---
 FROM base AS build
 
+# 1. Устанавливаем системные пакеты (Python и зависимости для работы с фото)
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config && \
+    apt-get install --no-install-recommends -y \
+    curl libjemalloc2 libvips postgresql-client \
+    python3 python3-pip python3-setuptools \
+    libgl1 libglib2.0-0 && \
+    ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY Gemfile Gemfile.lock vendor ./
