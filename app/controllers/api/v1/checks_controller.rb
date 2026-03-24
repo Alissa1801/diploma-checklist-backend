@@ -37,52 +37,69 @@ module Api
         render json: { error: "Check not found" }, status: :not_found
       end
 
-      def create
-        check = current_user.checks.new(check_params)
-        check.status = 0 # pending
-        check.submitted_at ||= Time.current
+def create
+  # 1. Создаем запись. Важно: check_params теперь разрешает :zone_id (см. ниже в private)
+  check = current_user.checks.new(check_params)
 
-        if check.save
-          begin
-            # 1. Прикрепляем фото
-            process_single_photo(check)
+  # Устанавливаем статус 1 (processing / в обработке), чтобы iPhone сразу показал "крутилку"
+  check.status = 1
+  check.submitted_at ||= Time.current
 
-            if check.photo.attached?
-              # 2. ЗАПУСК НЕЙРОСЕТИ (Главное исправление)
-              # Мы вызываем сервис сразу после сохранения фото
+  if check.save
+    begin
+      # 2. Сохраняем фото в ActiveStorage
+      process_single_photo(check)
+
+      if check.photo.attached?
+        # 3. ФОНОВЫЙ ПОТОК (Thread)
+        # Мы отвечаем iPhone немедленно, а нейросеть запускаем "за кулисами"
+        Thread.new do
+          # wrap нужен для безопасной работы с базой данных внутри потока в Rails
+          Rails.application.executor.wrap do
+            begin
               service = YoloService.new(check)
-              analysis_result = service.save_result
-
-              # Логируем успех создания
-              LoggingService.log_user_action(current_user, "create_check_with_ml", {
-                check_id: check.id,
-                ml_status: analysis_result.present? ? "success" : "failed"
-              })
-
-              # 3. Отдаем ответ. Важно включить analysis_result, чтобы iOS его увидела
-              render json: {
-                success: true,
-                check: check.as_json(include: :analysis_result, methods: [ :status_text, :user_name ]),
-                message: "Check created and analyzed"
-              }, status: :created
-            else
-              check.destroy # Удаляем чек, если фото не прикрепилось
-              render json: { success: false, error: "Photo attachment failed" }, status: :unprocessable_entity
+              service.save_result # Это вызовет Python и обновит статус на 2 или 3
+            rescue => e
+              Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
+              check.update(status: 0) # Если совсем всё упало, возвращаем в pending
             end
-          rescue => e
-            LoggingService.log_error(e, { check_id: check.id, step: "photo_processing_or_ml" })
-            render json: { success: false, error: e.message }, status: :unprocessable_entity
           end
-        else
-          render json: { success: false, errors: check.errors.full_messages }, status: :unprocessable_entity
         end
+
+        # 4. ОТВЕТ КЛИЕНТУ (Происходит мгновенно, не дожидаясь Python)
+        # Мы включаем :zone в include, чтобы iOS сразу увидела имя зоны, а не "Неизвестно"
+        render json: {
+          success: true,
+          check: check.as_json(
+            include: [ :zone, :analysis_result ],
+            methods: [ :status_text, :user_name ]
+          ),
+          message: "Check created. AI analysis is running in background."
+        }, status: :created
+
+      else
+        # Если фото не прикрепилось — удаляем пустой чек
+        check.destroy
+        render json: { success: false, error: "Photo attachment failed" }, status: :unprocessable_entity
       end
 
-      private
+    rescue => e
+      LoggingService.log_error(e, { check_id: check.id, user_id: current_user.id })
+      render json: { success: false, error: e.message }, status: :unprocessable_entity
+    end
+  else
+    # Ошибки валидации (например, если zone_id пустой)
+    render json: { success: false, errors: check.errors.full_messages }, status: :unprocessable_entity
+  end
+end
 
-      def check_params
-        params.permit(:zone_id, :room_number, :submitted_at)
-      end
+private
+
+# ОБНОВЛЕННЫЙ МЕТОД PARAMS (Исправляет "Неизвестную зону")
+def check_params
+  # Разрешаем :zone_id, иначе Rails его отбрасывает при создании
+  params.permit(:zone_id, :room_number, :submitted_at, :photo)
+end
 
       def process_single_photo(check)
         photo = params[:photo]
