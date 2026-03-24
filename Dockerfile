@@ -65,7 +65,10 @@ RUN groupadd --system --gid 1000 rails && \
 
 # Настройка прав на папку для сохранения результатов анализа
 USER root
-RUN mkdir -p /rails/public/analysis && chown -R rails:rails /rails/public/analysis
+RUN mkdir -p /rails/storage /rails/public/analysis && \
+    chown -R rails:rails /rails/storage /rails/public/analysis && \
+    chmod -R 775 /rails/storage /rails/public/analysis
+
 USER 1000:1000
 
 # Копируем установленные гемы и код из стадии сборки
