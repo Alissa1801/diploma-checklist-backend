@@ -65,14 +65,10 @@ module Api
               end
 
               # 4. ОТВЕТ КЛИЕНТУ
-              render json: {
-                success: true,
-                check: check.as_json(
-                  include: [ :zone, :analysis_result ],
-                  methods: [ :status_text, :user_name ]
-                ),
-                message: "Check created. AI analysis is running in background."
-              }, status: :created
+              ender json: check.as_json(
+  include: { zone: { only: [ :id, :name ] }, analysis_result: {} },
+  methods: [ :status_text, :user_name ]
+), status: :created
 
             else
               # Если фото не прикрепилось
@@ -81,20 +77,22 @@ module Api
             end
 
           rescue ActiveStorage::IntegrityError => e
-            # ФИКС: Перехватываем ошибку целостности, чтобы запрос не падал
+            # ФИКС: Перехватываем ошибку целостности
             Rails.logger.error "INTEGRITY_IGNORE: #{e.message}"
-            render json: {
-              success: true,
-              check: check.as_json(include: [ :zone ], methods: [ :status_text ]),
-              message: "Check created with integrity bypass."
-            }, status: :created
+
+            # Рендерим объект БЕЗ обертки 'check:', чтобы Swift нашел 'id' в корне
+            render json: check.as_json(
+              include: { zone: { only: [ :id, :name ] } },
+              methods: [ :status_text, :user_name ]
+            ), status: :created
+
           rescue => e
             LoggingService.log_error(e, { check_id: check.id, user_id: current_user.id })
-            render json: { success: false, error: e.message }, status: :unprocessable_entity
+            render json: { error: e.message }, status: :unprocessable_entity
           end
         else
-          # Ошибки валидации
-          render json: { success: false, errors: check.errors.full_messages }, status: :unprocessable_entity
+          # Ошибки валидации (например, пустой zone_id)
+          render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
         end
       end
 
