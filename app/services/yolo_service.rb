@@ -39,10 +39,11 @@ class YoloService
             check: @check,
             is_approved: result_data["is_approved"],
             confidence_score: result_data["confidence"],
-            detected_objects: result_data["objects"], # Сохранится как JSONB
-            issues: result_data["issues"],           # Сохранится как JSONB
-            feedback: result_data["feedback"],
-            processed_url: result_data["processed_url"], # НОВОЕ ПОЛЕ ИЗ МИГРАЦИИ
+            detected_objects: result_data["objects"],
+            issues: result_data["issues"],
+            # Мы убрали feedback, так как в модели его нет,
+            # либо добавь его в модель через миграцию
+            processed_url: result_data["processed_url"],
             ml_model_version: "yolov8_hotel_v1.0"
           )
 
