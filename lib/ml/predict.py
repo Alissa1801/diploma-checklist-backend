@@ -17,7 +17,7 @@ def run_prediction(image_path, model_path):
         model = YOLO(model_path)
         
         # 2. Настройка путей
-        base_path = os.getcwd() 
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         project_path = os.path.join(base_path, "public", "analysis")
         
         # Создаем базовую папку, если её нет
