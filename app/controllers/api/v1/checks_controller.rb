@@ -65,7 +65,7 @@ module Api
               end
 
               # 4. ОТВЕТ КЛИЕНТУ
-              ender json: check.as_json(
+              render json: check.as_json(
   include: { zone: { only: [ :id, :name ] }, analysis_result: {} },
   methods: [ :status_text, :user_name ]
 ), status: :created
@@ -76,18 +76,14 @@ module Api
               render json: { success: false, error: "Photo attachment failed" }, status: :unprocessable_entity
             end
 
-          rescue ActiveStorage::IntegrityError => e
-            # ФИКС: Перехватываем ошибку целостности
-            Rails.logger.error "INTEGRITY_IGNORE: #{e.message}"
+          rescue ActiveStorage::IntegrityError
 
-            # Рендерим объект БЕЗ обертки 'check:', чтобы Swift нашел 'id' в корне
             render json: check.as_json(
               include: { zone: { only: [ :id, :name ] } },
               methods: [ :status_text, :user_name ]
             ), status: :created
 
           rescue => e
-            LoggingService.log_error(e, { check_id: check.id, user_id: current_user.id })
             render json: { error: e.message }, status: :unprocessable_entity
           end
         else

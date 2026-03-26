@@ -7,6 +7,7 @@ class YoloService
   end
 
   def save_result
+    FileUtils.mkdir_p(Rails.root.join("public", "analysis"))
     # Проверяем, прикреплено ли фото, чтобы не упасть с ошибкой
     return nil unless @check.photo.attached?
 
