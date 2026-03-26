@@ -11,39 +11,51 @@ module Api
 
       def index
         @checks = current_user.admin? ? Check.all : current_user.checks
-        checks = @checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
+        checks_base = @checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
 
         LoggingService.log_user_action(current_user, "get_checks_list", {
-          count: checks.count,
+          count: checks_base.count,
           is_admin: current_user.admin?
         })
 
-        # Используем adapter: false, чтобы Swift получил данные напрямую
-        render json: checks.as_json(
-          include: {
-            zone: { only: [ :id, :name, :description ] },
-            analysis_result: {}
-          },
-          methods: [ :user_name, :status_text ]
-        ).map { |c| c.merge(zone_id: c["zone_id"], submitted_at: c["submitted_at"]) }, adapter: false
+        checks_data = checks_base.map do |check|
+          check.as_json(
+            include: {
+              zone: { only: [ :id, :name, :description ] },
+              analysis_result: {}
+            },
+            methods: [ :user_name, :status_text ]
+          ).merge({
+            "zone_id" => check.zone_id,
+            "submitted_at" => check.submitted_at,
+            "created_at" => check.created_at
+          })
+        end
+
+        render json: checks_data, adapter: false
       end
 
       def show
         check = current_user.admin? ? Check.find(params[:id]) : current_user.checks.find(params[:id])
 
-        render json: check.as_json(
+        check_data = check.as_json(
           include: {
             zone: { only: [ :id, :name, :description ] },
             analysis_result: {}
           },
           methods: [ :user_name, :status_text ]
-        ).merge(zone_id: check.zone_id, submitted_at: check.submitted_at), adapter: false
+        ).merge({
+          "zone_id" => check.zone_id,
+          "submitted_at" => check.submitted_at,
+          "created_at" => check.created_at
+        })
+
+        render json: check_data, adapter: false
       rescue ActiveRecord::RecordNotFound => e
-        LoggingService.log_error(e, { check_id: params[:id], user_id: current_user.id })
         render json: { error: "Check not found" }, status: :not_found
       end
 
-def create
+      def create
         check = current_user.checks.new(check_params)
         check.status = 1
         check.submitted_at ||= Time.current
@@ -53,7 +65,7 @@ def create
             process_single_photo(check)
 
             if check.photo.attached?
-              # ФОНОВЫЙ ПОТОК С ЛОГИРОВАНИЕМ
+              # Запуск анализа в фоновом потоке
               Thread.new do
                 Rails.application.executor.wrap do
                   begin
@@ -63,13 +75,12 @@ def create
                     Rails.logger.info "ML_FINISH: Анализ завершен для чека ##{check.id}"
                   rescue => e
                     Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
-                    # В случае фатальной ошибки ML возвращаем статус "Ошибка" (0)
                     check.update(status: 0)
                   end
                 end
               end
 
-              # ПОДГОТОВКА ДАННЫХ (Явное формирование хэша)
+              # Подготовка JSON ответа
               check_data = check.as_json(
                 include: {
                   zone: { only: [ :id, :name, :description ] },
@@ -82,35 +93,18 @@ def create
                 "created_at" => check.created_at
               })
 
-              # ОТВЕТ КЛИЕНТУ (adapter: false отключает сломанные сериализаторы)
               render json: check_data, adapter: false, status: :created
-
             else
-              # Если фото не прикрепилось по какой-то причине
               check.destroy
               render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
             end
-
           rescue ActiveStorage::IntegrityError => e
-            # Ошибка контрольной суммы (часто бывает на Railway), игнорируем и отдаем чек
-            Rails.logger.error "INTEGRITY_IGNORE: #{e.message}"
-
-            check_data_fallback = check.as_json(
-              include: { zone: { only: [ :id, :name, :description ] } },
-              methods: [ :status_text, :user_name ]
-            ).merge({
-              "zone_id" => check.zone_id,
-              "submitted_at" => check.submitted_at
-            })
-
-            render json: check_data_fallback, adapter: false, status: :created
-
+            render json: check.as_json(methods: [ :status_text ]).merge("zone_id" => check.zone_id),
+                   adapter: false, status: :created
           rescue => e
-            Rails.logger.error "CREATE_CHECK_ERROR: #{e.message}"
             render json: { error: e.message }, status: :unprocessable_entity
           end
         else
-          # Ошибки валидации модели
           render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
         end
       end
