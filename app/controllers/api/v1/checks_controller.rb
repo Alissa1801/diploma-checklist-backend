@@ -66,9 +66,12 @@ module Api
 
               # 4. ОТВЕТ КЛИЕНТУ
               render json: check.as_json(
-  include: { zone: { only: [ :id, :name ] }, analysis_result: {} },
+  include: {
+    zone: { only: [ :id, :name, :description ] },
+    analysis_result: {}
+  },
   methods: [ :status_text, :user_name ]
-), status: :created
+).merge(zone_id: check.zone_id), status: :created
 
             else
               # Если фото не прикрепилось
