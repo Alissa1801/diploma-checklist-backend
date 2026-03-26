@@ -75,6 +75,7 @@ module Api
                     Rails.logger.info "ML_FINISH: Анализ завершен для чека ##{check.id}"
                   rescue => e
                     Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
+                    Rails.logger.error e.backtrace.join("\n") # Это покажет, в какой строке упал Python
                     check.update(status: 0)
                   end
                 end
@@ -99,9 +100,11 @@ module Api
               render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
             end
           rescue ActiveStorage::IntegrityError => e
+            Rails.logger.warn "INTEGRITY_ISSUE: #{e.message}"
             render json: check.as_json(methods: [ :status_text ]).merge("zone_id" => check.zone_id),
                    adapter: false, status: :created
           rescue => e
+            Rails.logger.error "CREATE_CHECK_FAILED: #{e.message}" # Используем 'e'
             render json: { error: e.message }, status: :unprocessable_entity
           end
         else
