@@ -74,31 +74,7 @@ module Api
 
           # 2. Проверяем, прикрепилось ли фото (несмотря на возможные мелкие ошибки)
           if check.photo.attached?
-          # ФОНОВЫЙ ПОТОК
-          # Находим этот блок и заменяем на более "шумный"
-          Thread.new do
-            # Добавляем явное логирование в STDOUT для Railway
-            puts "--- [THREAD] ПОТОК ЗАПУЩЕН ДЛЯ ЧЕКА ##{check.id} ---"
-
-            Rails.application.executor.wrap do
-              begin
-                Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
-                service = YoloService.new(check)
-                result = service.save_result
-
-                if result
-                  Rails.logger.info "ML_SUCCESS: Чек ##{check.id} проанализирован"
-                else
-                  Rails.logger.error "ML_FAILURE: Service вернул nil для чека ##{check.id}"
-                end
-              rescue => e
-                Rails.logger.error "ML_CRITICAL_ERROR: #{e.message}"
-                puts "ML_BACKTRACE: #{e.backtrace.first(5).join("\n")}"
-              ensure
-                Rails.logger.info "ML_FINISH: Поток завершил работу ##{check.id}"
-              end
-            end
-          end
+            AnalyzeCheckJob.perform_later(check.id)
 
             # 3. ПОДГОТОВКА JSON (Явное формирование)
             check_data = check.as_json(
