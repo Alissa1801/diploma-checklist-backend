@@ -39,20 +39,16 @@ class YoloService
           analysis = AnalysisResult.create!(
             check: @check,
             is_approved: result_data["is_approved"],
-            confidence_score: result_data["confidence"],
+            confidence_score: result_data["confidence"], # Убедись, что ключ совпадает с JSON из Python
             detected_objects: result_data["objects"],
             issues: result_data["issues"],
-            # Мы убрали feedback, так как в модели его нет,
-            # либо добавь его в модель через миграцию
             processed_url: result_data["processed_url"],
             ml_model_version: "yolov8_hotel_v1.0"
           )
 
-          # 5. Обновление статуса основной проверки (Check)
-          # 2 - approved (Одобрено), 3 - rejected (Отклонено)
           @check.update!(
             status: result_data["is_approved"] ? 2 : 3,
-            score: result_data["confidence"]
+            score: result_data["confidence"] # И тут
           )
 
           analysis

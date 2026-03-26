@@ -52,7 +52,7 @@ module Api
 
         render json: check_data, adapter: false
       rescue ActiveRecord::RecordNotFound => e
-        Rails.logger.warn "INTEGRITY_ISSUE: #{e.message}"
+        Rails.logger.warn "NOT_FOUND_ISSUE: #{e.message}"
         render json: { error: "Check not found" }, status: :not_found
       end
 
@@ -63,54 +63,60 @@ module Api
 
         if check.save
           begin
+            # 1. Пытаемся прикрепить фото
             process_single_photo(check)
+          rescue ActiveStorage::IntegrityError => e
+            # Логируем, но не прерываем выполнение. Файл на диске обычно всё равно доступен.
+            Rails.logger.warn "INTEGRITY_ISSUE (ignored): #{e.message}"
+          rescue => e
+            Rails.logger.error "PHOTO_ATTACH_FAILED: #{e.message}"
+          end
 
-            if check.photo.attached?
-              # Запуск анализа в фоновом потоке
-              Thread.new do
-                Rails.application.executor.wrap do
-                  begin
-                    Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
-                    service = YoloService.new(check)
-                    service.save_result
-                    Rails.logger.info "ML_FINISH: Анализ завершен для чека ##{check.id}"
-                  rescue => e
-                    Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
-                    Rails.logger.error e.backtrace.join("\n") # Это покажет, в какой строке упал Python
-                    check.update(status: 0)
-                  end
+          # 2. Проверяем, прикрепилось ли фото (несмотря на возможные мелкие ошибки)
+          if check.photo.attached?
+            # ФОНОВЫЙ ПОТОК
+            Thread.new do
+              Rails.application.executor.wrap do
+                begin
+                  Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
+                  service = YoloService.new(check)
+                  service.save_result
+                  Rails.logger.info "ML_FINISH: Анализ завершен для чека ##{check.id}"
+                rescue => e
+                  Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
+                  Rails.logger.error e.backtrace.join("\n")
+                  check.update(status: 0) # Ставим ошибку, если ML упал
                 end
               end
-
-              # Подготовка JSON ответа
-              check_data = check.as_json(
-                include: {
-                  zone: { only: [ :id, :name, :description ] },
-                  analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
-                },
-                methods: [ :status_text, :user_name ]
-              ).merge({
-                "zone_id" => check.zone_id,
-                "submitted_at" => check.submitted_at,
-                "created_at" => check.created_at
-              })
-
-              render json: check_data, adapter: false, status: :created
-            else
-              check.destroy
-              render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
             end
-          rescue ActiveStorage::IntegrityError => e
-            Rails.logger.warn "INTEGRITY_ISSUE: #{e.message}"
-            render json: check.as_json(methods: [ :status_text ]).merge("zone_id" => check.zone_id),
-                   adapter: false, status: :created
-          rescue => e
-            Rails.logger.error "CREATE_CHECK_FAILED: #{e.message}" # Используем 'e'
-            render json: { error: e.message }, status: :unprocessable_entity
+
+            # 3. ПОДГОТОВКА JSON (Явное формирование)
+            check_data = check.as_json(
+              include: {
+                zone: { only: [ :id, :name, :description ] },
+                analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
+              },
+              methods: [ :status_text, :user_name ]
+            ).merge({
+              "zone_id" => check.zone_id,
+              "submitted_at" => check.submitted_at,
+              "created_at" => check.created_at
+            })
+
+            render json: check_data, adapter: false, status: :created
+          else
+            # Если фото совсем нет, чек бесполезен
+            check.destroy
+            render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
           end
         else
+          # Ошибки валидации (например, не передали zone_id)
           render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
         end
+      rescue => e
+        # Глобальный перехват для критических ошибок
+        Rails.logger.error "CREATE_CHECK_CRITICAL_FAILED: #{e.message}"
+        render json: { error: e.message }, status: :unprocessable_entity
       end
 
       private
