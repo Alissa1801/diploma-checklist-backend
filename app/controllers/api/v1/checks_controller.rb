@@ -43,7 +43,7 @@ module Api
         render json: { error: "Check not found" }, status: :not_found
       end
 
-      def create
+def create
         check = current_user.checks.new(check_params)
         check.status = 1
         check.submitted_at ||= Time.current
@@ -63,40 +63,54 @@ module Api
                     Rails.logger.info "ML_FINISH: Анализ завершен для чека ##{check.id}"
                   rescue => e
                     Rails.logger.error "ML_THREAD_ERROR: #{e.message}"
+                    # В случае фатальной ошибки ML возвращаем статус "Ошибка" (0)
                     check.update(status: 0)
                   end
                 end
               end
 
-              # ОТВЕТ КЛИЕНТУ (Явный и полный)
-              render json: check.as_json(
+              # ПОДГОТОВКА ДАННЫХ (Явное формирование хэша)
+              check_data = check.as_json(
                 include: {
                   zone: { only: [ :id, :name, :description ] },
                   analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
                 },
                 methods: [ :status_text, :user_name ]
               ).merge({
-                zone_id: check.zone_id,
-                submitted_at: check.submitted_at,
-                created_at: check.created_at
-              }), adapter: false, status: :created
+                "zone_id" => check.zone_id,
+                "submitted_at" => check.submitted_at,
+                "created_at" => check.created_at
+              })
+
+              # ОТВЕТ КЛИЕНТУ (adapter: false отключает сломанные сериализаторы)
+              render json: check_data, adapter: false, status: :created
 
             else
+              # Если фото не прикрепилось по какой-то причине
               check.destroy
               render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
             end
 
           rescue ActiveStorage::IntegrityError => e
+            # Ошибка контрольной суммы (часто бывает на Railway), игнорируем и отдаем чек
             Rails.logger.error "INTEGRITY_IGNORE: #{e.message}"
-            render json: check.as_json(
+
+            check_data_fallback = check.as_json(
               include: { zone: { only: [ :id, :name, :description ] } },
               methods: [ :status_text, :user_name ]
-            ).merge(zone_id: check.zone_id, submitted_at: check.submitted_at), adapter: false, status: :created
+            ).merge({
+              "zone_id" => check.zone_id,
+              "submitted_at" => check.submitted_at
+            })
+
+            render json: check_data_fallback, adapter: false, status: :created
 
           rescue => e
+            Rails.logger.error "CREATE_CHECK_ERROR: #{e.message}"
             render json: { error: e.message }, status: :unprocessable_entity
           end
         else
+          # Ошибки валидации модели
           render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
         end
       end
