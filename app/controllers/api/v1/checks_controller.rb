@@ -64,14 +64,20 @@ module Api
                 end
               end
 
-              # 4. ОТВЕТ КЛИЕНТУ
-              render json: check.as_json(
+# 4. ОТВЕТ КЛИЕНТУ
+# Полный и явный список полей для Swift
+render json: check.serializable_hash(
   include: {
     zone: { only: [ :id, :name, :description ] },
-    analysis_result: {}
+    analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
   },
   methods: [ :status_text, :user_name ]
-).merge(zone_id: check.zone_id), status: :created
+).merge({
+  # Принудительно добавляем поля, на которых спотыкается Swift
+  zone_id: check.zone_id,
+  submitted_at: check.submitted_at,
+  created_at: check.created_at
+}), status: :created
 
             else
               # Если фото не прикрепилось
