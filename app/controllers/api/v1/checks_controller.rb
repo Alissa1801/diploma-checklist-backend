@@ -52,6 +52,7 @@ module Api
 
         render json: check_data, adapter: false
       rescue ActiveRecord::RecordNotFound => e
+        Rails.logger.warn "INTEGRITY_ISSUE: #{e.message}"
         render json: { error: "Check not found" }, status: :not_found
       end
 
