@@ -2,15 +2,19 @@ import sys
 import json
 import os
 import warnings
-import shutil  # Добавлено для управления папками и очистки места
+import shutil
 
+# 1. Срочное исправление конфликта типов Numpy и Ultralytics
 try:
-    import numpy
+    import numpy as np
+    # Если Numpy версии 1.24+ иногда капризничает с типами ndarray
+    if not hasattr(np, "ndarray"):
+        np.ndarray = np.array
 except ImportError:
     print(json.dumps({"error": "Numpy not installed on server"}))
     sys.exit(1)
 
-# Настройка кодировки для корректной передачи кириллицы в Ruby
+# Настройка кодировки для Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 
 warnings.filterwarnings('ignore')
@@ -22,15 +26,13 @@ def run_prediction(image_path, model_path):
         # 1. Загрузка модели
         model = YOLO(model_path)
         
-        # 2. Настройка путей
+        # 2. Настройка путей (относительно этого скрипта)
         base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         project_path = os.path.join(base_path, "public", "analysis")
         
-        # Создаем базовую папку, если её нет
         if not os.path.exists(project_path):
             os.makedirs(project_path, exist_ok=True)
             
-        # КРИТИЧНО: Удаляем старую папку 'predict', чтобы результат всегда был в одном месте
         save_dir = os.path.join(project_path, "predict")
         if os.path.exists(save_dir):
             shutil.rmtree(save_dir)
@@ -49,16 +51,14 @@ def run_prediction(image_path, model_path):
         result = results[0]
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # Классы для логики проверки (настрой под свою модель)
+        # Классы проблем для логики отеля
         bad_stuff = ['pillow_messy', 'trash', 'dirty_floor', 'messy_bed'] 
         found_issues = [cls for cls in detected_classes if cls in bad_stuff]
         
         is_approved = len(found_issues) == 0
-        
-        # Получаем имя файла (например, "photo.jpg")
         output_filename = os.path.basename(result.path)
 
-        # 4. Формируем JSON-ответ
+        # 4. Формируем JSON
         output = {
             "is_approved": is_approved,
             "confidence": float(result.boxes.conf.mean() * 100) if len(result.boxes.conf) > 0 else 100.0,
@@ -68,7 +68,7 @@ def run_prediction(image_path, model_path):
             "processed_url": f"/analysis/predict/{output_filename}"
         }
         
-        # 5. Вывод JSON для Ruby (обязательно flush)
+        # 5. Вывод для Ruby
         print(json.dumps(output, ensure_ascii=False))
         sys.stdout.flush()
         
