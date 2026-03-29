@@ -4,16 +4,21 @@ import json
 import warnings
 import shutil
 
-# ПРИНУДИТЕЛЬНЫЙ ОТКАТ К NUMPY 1.x API ДЛЯ YOLO
+# --- ТОТАЛЬНЫЙ ФИКС ПРОСТРАНСТВА ИМЕН И ТИПОВ ---
 try:
     import numpy as np
-    # Этот хак исправляет 'expected np.ndarray' в 99% случаев на серверах
+    # Исправляет ошибку "expected np.ndarray (got numpy.ndarray)"
+    sys.modules['np'] = np 
+    if not hasattr(np, "ndarray"):
+        np.ndarray = np.array
+    # Для новых версий Numpy регистрируем старый интерфейс в системе
     if hasattr(np, "core"):
         sys.modules['numpy.core.multiarray'] = np.core.multiarray
 except ImportError:
-    pass
+    print(json.dumps({"error": "Numpy failure"}))
+    sys.exit(1)
 
-# Настройка кодировки для Ruby
+# Настройка вывода для Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 
 warnings.filterwarnings('ignore')
@@ -25,7 +30,7 @@ def run_prediction(image_path, model_path):
         # 1. Загрузка модели
         model = YOLO(model_path)
         
-        # 2. Настройка путей (относительно этого скрипта)
+        # 2. Настройка путей
         base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         project_path = os.path.join(base_path, "public", "analysis")
         
@@ -50,30 +55,32 @@ def run_prediction(image_path, model_path):
         result = results[0]
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # Классы проблем для логики отеля
+        # Расчет уверенности (извлекаем чистый float из тензора)
+        conf_value = 0.0
+        if len(result.boxes.conf) > 0:
+            conf_value = float(result.boxes.conf.mean().item()) * 100
+
         bad_stuff = ['pillow_messy', 'trash', 'dirty_floor', 'messy_bed'] 
         found_issues = [cls for cls in detected_classes if cls in bad_stuff]
         
         is_approved = len(found_issues) == 0
         output_filename = os.path.basename(result.path)
 
-        # 4. Формируем JSON
+        # 4. Формируем JSON (строгие типы данных)
         output = {
             "is_approved": is_approved,
-            "confidence": float(result.boxes.conf.mean() * 100) if len(result.boxes.conf) > 0 else 100.0,
-            "objects": [{"name": cls, "count": detected_classes.count(cls)} for cls in set(detected_classes)],
+            "confidence": round(conf_value, 2),
+            "objects": [{"name": str(cls), "count": int(detected_classes.count(cls))} for cls in set(detected_classes)],
             "issues": list(set(found_issues)),
             "feedback": "Стандарты чистоты соблюдены" if is_approved else f"Обнаружены проблемы: {', '.join(set(found_issues))}",
             "processed_url": f"/analysis/predict/{output_filename}"
         }
         
-        # 5. Вывод для Ruby
         print(json.dumps(output, ensure_ascii=False))
         sys.stdout.flush()
         
     except Exception as e:
-        error_output = {"error": str(e)}
-        print(json.dumps(error_output, ensure_ascii=False))
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
         sys.stdout.flush()
 
 if __name__ == "__main__":
