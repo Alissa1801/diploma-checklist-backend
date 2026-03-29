@@ -61,40 +61,32 @@ module Api
         check.status = 1
         check.submitted_at ||= Time.current
 
+        # ВЫХВАТЫВАЕМ ПУТЬ К ТЕМП-ФАЙЛУ СРАЗУ
+        raw_photo_path = params[:photo]&.tempfile&.path
+
         if check.save
           begin
-            # 1. Пытаемся прикрепить фото
             process_single_photo(check)
-          rescue ActiveStorage::IntegrityError => e
-            # В Railway это часто ложная тревога. Логируем, но идем дальше.
-            Rails.logger.warn "INTEGRITY_IGNORE: Проблема с контрольной суммой для чека ##{check.id}"
           rescue => e
-            Rails.logger.error "PHOTO_ERROR: #{e.message}"
+            Rails.logger.warn "ATTACH_ERROR_IGNORED: #{e.message}"
           end
 
-          # 2. Проверяем наличие фото и запускаем анализ
-          if check.photo.attached? || check.photo.blob.present?
-            begin
-              Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
-              service = YoloService.new(check)
-              service.save_result
-              check.reload # Подгружаем результат анализа и новый статус
+          # ПЕРЕДАЕМ ПУТЬ В СЕРВИС
+          begin
+            Rails.logger.info "ML_START: Начинаем анализ ##{check.id}"
+            # Передаем и чек, и путь к файлу, который только что пришел
+            service = YoloService.new(check, raw_photo_path)
+            service.save_result
+            check.reload
 
-              render_check_json(check, :created)
-            rescue => e
-              Rails.logger.error "ML_EXECUTION_ERROR: #{e.message}"
-              render json: { error: "Ошибка анализа: #{e.message}" }, status: :unprocessable_entity
-            end
-          else
-            check.destroy
-            render json: { error: "Файл не был загружен корректно" }, status: :unprocessable_entity
+            render_check_json(check, :created)
+          rescue => e
+            Rails.logger.error "ML_CRITICAL_ERROR: #{e.message}"
+            render json: { error: e.message }, status: :unprocessable_entity
           end
         else
           render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
         end
-      rescue => e
-        Rails.logger.error "CREATE_CHECK_CRITICAL_FAILED: #{e.message}"
-        render json: { error: e.message }, status: :unprocessable_entity
       end
 
       private
