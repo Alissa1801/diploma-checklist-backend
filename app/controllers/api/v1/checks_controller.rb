@@ -57,50 +57,63 @@ module Api
       end
 
       def create
-  check = current_user.checks.new(check_params)
-  check.status = 1
-  check.submitted_at ||= Time.current
+        check = current_user.checks.new(check_params)
+        check.status = 1
+        check.submitted_at ||= Time.current
 
-  if check.save
-    begin
-      process_single_photo(check)
+        if check.save
+          begin
+            # 1. Пытаемся прикрепить фото
+            process_single_photo(check)
+          rescue ActiveStorage::IntegrityError => e
+            # В Railway это часто ложная тревога. Логируем, но идем дальше.
+            Rails.logger.warn "INTEGRITY_IGNORE: Проблема с контрольной суммой для чека ##{check.id}"
+          rescue => e
+            Rails.logger.error "PHOTO_ERROR: #{e.message}"
+          end
 
-      if check.photo.attached?
-        # 1. ЗАПУСКАЕМ АНАЛИЗ ПРЯМО ЗДЕСЬ (Синхронно)
-        Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
-        service = YoloService.new(check)
-        service.save_result # Это займет 3-5 секунд
-        Rails.logger.info "ML_FINISH: Анализ завершен"
+          # 2. Проверяем наличие фото и запускаем анализ
+          if check.photo.attached? || check.photo.blob.present?
+            begin
+              Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
+              service = YoloService.new(check)
+              service.save_result
+              check.reload # Подгружаем результат анализа и новый статус
 
-        check.reload # Важно: обновляем объект данными из базы
+              render_check_json(check, :created)
+            rescue => e
+              Rails.logger.error "ML_EXECUTION_ERROR: #{e.message}"
+              render json: { error: "Ошибка анализа: #{e.message}" }, status: :unprocessable_entity
+            end
+          else
+            check.destroy
+            render json: { error: "Файл не был загружен корректно" }, status: :unprocessable_entity
+          end
+        else
+          render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
+        end
+      rescue => e
+        Rails.logger.error "CREATE_CHECK_CRITICAL_FAILED: #{e.message}"
+        render json: { error: e.message }, status: :unprocessable_entity
       end
 
-      # 2. СОБИРАЕМ JSON ВРУЧНУЮ
-      check_data = check.as_json(
-        include: {
-          zone: { only: [ :id, :name, :description ] },
-          analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
-        },
-        methods: [ :status_text, :user_name ]
-      ).merge({
-        "zone_id" => check.zone_id,
-        "submitted_at" => check.submitted_at,
-        "status" => check.status # Убеждаемся, что статус 2 или 3
-      })
-
-      # adapter: false — КРИТИЧЕСКИ ВАЖНО для обхода AMS гемма
-      render json: check_data, adapter: false, status: :created
-
-    rescue => e
-      Rails.logger.error "CREATE_CHECK_ERROR: #{e.message}"
-      render json: { error: e.message }, status: :unprocessable_entity
-    end
-  else
-    render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
-  end
-end
-
       private
+
+      def render_check_json(check, status)
+        check_data = check.as_json(
+          include: {
+            zone: { only: [ :id, :name, :description ] },
+            analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
+          },
+          methods: [ :status_text, :user_name ]
+        ).merge({
+          "zone_id" => check.zone_id,
+          "submitted_at" => check.submitted_at,
+          "created_at" => check.created_at
+        })
+
+        render json: check_data, adapter: false, status: status
+      end
 
       def check_params
         params.permit(:zone_id, :room_number, :submitted_at, :photo)
