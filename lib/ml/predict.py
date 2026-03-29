@@ -4,6 +4,12 @@ import os
 import warnings
 import shutil  # Добавлено для управления папками и очистки места
 
+try:
+    import numpy
+except ImportError:
+    print(json.dumps({"error": "Numpy not installed on server"}))
+    sys.exit(1)
+
 # Настройка кодировки для корректной передачи кириллицы в Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 

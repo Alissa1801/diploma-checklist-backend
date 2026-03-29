@@ -16,20 +16,16 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML: Устанавливаем CPU-версию PyTorch
-RUN pip3 install --no-cache-dir \
+# 2. ML & Зависимости: Устанавливаем CPU-версию PyTorch и NumPy
+RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
+    pip3 install --no-cache-dir \
+    numpy==1.26.4 \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
 # 3. YOLO: Устанавливаем нейросеть и OpenCV-headless
 RUN pip3 install --no-cache-dir ultralytics opencv-python-headless --break-system-packages
-
-ENV RAILS_ENV="production" \
-    BUNDLE_DEPLOYMENT="1" \
-    BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="development" \
-    LD_PRELOAD="/usr/local/lib/libjemalloc.so"
 
 # --- Build Stage ---
 FROM base AS build
