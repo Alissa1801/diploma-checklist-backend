@@ -20,6 +20,11 @@ except ImportError:
     print(json.dumps({"error": "Numpy failure"}))
     sys.exit(1)
 
+try:
+    import cpuinfo
+except ImportError:
+    pass
+
 # Настройка вывода для Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 
