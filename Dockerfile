@@ -26,13 +26,16 @@ RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
 
 # 3. ML: Установка PyTorch, YOLO и ПОЛНОГО набора зависимостей
-# 3. ML: Установка PyTorch, YOLO и АБСОЛЮТНО ВСЕХ зависимостей
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu --break-system-packages && \
-    pip3 install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+
+# Добавляем hub_sdk и остальные пакеты отдельной командой, чтобы Railway точно их увидел
+RUN pip3 install --no-cache-dir \
     ultralytics==8.1.0 \
+    ultralytics-hub \
+    hub-sdk \
     opencv-python-headless \
     psutil \
     pyyaml \
@@ -47,8 +50,6 @@ RUN pip3 install --no-cache-dir \
     python-dateutil \
     requests \
     six \
-    ultralytics-hub \
-    timm \
     --no-deps --break-system-packages
 
 # --- Build Stage ---
