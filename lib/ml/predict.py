@@ -4,14 +4,15 @@ import os
 import warnings
 import shutil
 
-# 1. Срочное исправление конфликта типов Numpy и Ultralytics
+# --- ПРОВЕРКА И ФИКС ВЕРСИИ NUMPY ---
 try:
     import numpy as np
-    # Если Numpy версии 1.24+ иногда капризничает с типами ndarray
-    if not hasattr(np, "ndarray"):
-        np.ndarray = np.array
+    # Если версия 2.0+, пробуем принудительно откатить поведение (на всякий случай)
+    if int(np.__version__.split('.')[0]) >= 2:
+        # Хак для совместимости типов
+        np.core.multiarray.ndarray = np.ndarray
 except ImportError:
-    print(json.dumps({"error": "Numpy not installed on server"}))
+    print(json.dumps({"error": "Numpy not installed"}))
     sys.exit(1)
 
 # Настройка кодировки для Ruby

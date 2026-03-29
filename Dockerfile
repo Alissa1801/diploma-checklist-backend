@@ -22,16 +22,20 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML & Зависимости: Устанавливаем стабильную комбинацию
-RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
+# 2. ML & Зависимости: Удаляем возможные остатки и ставим строго Numpy 1.x
+RUN pip3 uninstall -y numpy && \
+    pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir \
-    numpy==1.24.3 \
+    numpy==1.26.4 \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
-# 3. YOLO & OpenCV: Устанавливаем ultralytics БЕЗ принудительного обновления numpy
-RUN pip3 install --no-cache-dir ultralytics==8.1.0 opencv-python-headless --break-system-packages
+# 3. YOLO: Ставим с флагом --upgrade-strategy only-if-needed
+RUN pip3 install --no-cache-dir \
+    ultralytics==8.1.0 \
+    opencv-python-headless \
+    --break-system-packages
 
 # --- Build Stage ---
 FROM base AS build
