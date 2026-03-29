@@ -6,8 +6,14 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
 WORKDIR /rails
 
-# 1. СИСТЕМНЫЕ ПАКЕТЫ: Добавлены libgl1 и libglib2.0-0 для работы OpenCV
-# Флаг -sf для ln гарантирует отсутствие ошибки "File exists"
+# Устанавливаем базовые переменные окружения
+ENV RAILS_ENV="production" \
+    BUNDLE_DEPLOYMENT="1" \
+    BUNDLE_PATH="/usr/local/bundle" \
+    BUNDLE_WITHOUT="development" \
+    LD_PRELOAD="/usr/local/lib/libjemalloc.so"
+
+# 1. СИСТЕМНЫЕ ПАКЕТЫ
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
     curl libjemalloc2 libvips postgresql-client \
@@ -24,13 +30,12 @@ RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
-# 3. YOLO: Устанавливаем нейросеть и OpenCV-headless
+# 3. YOLO & OpenCV
 RUN pip3 install --no-cache-dir ultralytics opencv-python-headless --break-system-packages
 
 # --- Build Stage ---
 FROM base AS build
 
-# Устанавливаем инструменты сборки для компиляции гемов (build-essential)
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
     build-essential \
@@ -42,14 +47,12 @@ RUN apt-get update -qq && \
 
 COPY Gemfile Gemfile.lock ./
 
-# Установка гемов
 RUN bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     bundle exec bootsnap precompile -j 1 --gemfile
 
 COPY . .
 
-# Предкомпиляция Bootsnap
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
 # --- Final Stage ---
@@ -59,19 +62,23 @@ FROM base
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
 
-# Настройка прав на папку для сохранения результатов анализа
+# Настройка прав (сначала создаем структуру под root)
 USER root
-RUN mkdir -p /rails/storage /rails/public/analysis && \
-    chown -R rails:rails /rails/storage /rails/public/analysis && \
-    chmod -R 775 /rails/storage /rails/public/analysis
+RUN mkdir -p /rails/storage /rails/public/analysis /rails/db /rails/log /rails/tmp && \
+    chown -R rails:rails /rails && \
+    chmod -R 775 /rails
 
-USER 1000:1000
-
-# Копируем установленные гемы и код из стадии сборки
+# 1. Копируем гемы
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
-COPY --chown=rails:rails --from=build /rails /rails
+
+# 2. Копируем код (используем /. чтобы копировать содержимое, а не саму папку как файл)
+COPY --chown=rails:rails --from=build /rails/. /rails/
+
+# Возвращаемся к пользователю rails
+USER 1000:1000
 
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
 EXPOSE 80
+# Рекомендуется использовать полный путь для надежности
 CMD ["./bin/thrust", "./bin/rails", "server"]
