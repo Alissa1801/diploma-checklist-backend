@@ -43,6 +43,9 @@ RUN pip3 install --no-cache-dir \
     pyparsing \
     cycler \
     kiwisolver \
+    python-dateutil \
+    requests \
+    six \
     --no-deps --break-system-packages
 
 # --- Build Stage ---
