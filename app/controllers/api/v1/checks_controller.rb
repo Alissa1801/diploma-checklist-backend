@@ -57,53 +57,48 @@ module Api
       end
 
       def create
-        check = current_user.checks.new(check_params)
-        check.status = 1
-        check.submitted_at ||= Time.current
+  check = current_user.checks.new(check_params)
+  check.status = 1
+  check.submitted_at ||= Time.current
 
-        if check.save
-          begin
-            # 1. Пытаемся прикрепить фото
-            process_single_photo(check)
-          rescue ActiveStorage::IntegrityError => e
-            # Логируем, но не прерываем выполнение. Файл на диске обычно всё равно доступен.
-            Rails.logger.warn "INTEGRITY_ISSUE (ignored): #{e.message}"
-          rescue => e
-            Rails.logger.error "PHOTO_ATTACH_FAILED: #{e.message}"
-          end
+  if check.save
+    begin
+      process_single_photo(check)
 
-          # 2. Проверяем, прикрепилось ли фото (несмотря на возможные мелкие ошибки)
-          if check.photo.attached?
-            AnalyzeCheckJob.perform_later(check.id)
+      if check.photo.attached?
+        # 1. ЗАПУСКАЕМ АНАЛИЗ ПРЯМО ЗДЕСЬ (Синхронно)
+        Rails.logger.info "ML_START: Начинаем анализ для чека ##{check.id}"
+        service = YoloService.new(check)
+        service.save_result # Это займет 3-5 секунд
+        Rails.logger.info "ML_FINISH: Анализ завершен"
 
-            # 3. ПОДГОТОВКА JSON (Явное формирование)
-            check_data = check.as_json(
-              include: {
-                zone: { only: [ :id, :name, :description ] },
-                analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
-              },
-              methods: [ :status_text, :user_name ]
-            ).merge({
-              "zone_id" => check.zone_id,
-              "submitted_at" => check.submitted_at,
-              "created_at" => check.created_at
-            })
-
-            render json: check_data, adapter: false, status: :created
-          else
-            # Если фото совсем нет, чек бесполезен
-            check.destroy
-            render json: { error: "Photo attachment failed" }, status: :unprocessable_entity
-          end
-        else
-          # Ошибки валидации (например, не передали zone_id)
-          render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
-        end
-      rescue => e
-        # Глобальный перехват для критических ошибок
-        Rails.logger.error "CREATE_CHECK_CRITICAL_FAILED: #{e.message}"
-        render json: { error: e.message }, status: :unprocessable_entity
+        check.reload # Важно: обновляем объект данными из базы
       end
+
+      # 2. СОБИРАЕМ JSON ВРУЧНУЮ
+      check_data = check.as_json(
+        include: {
+          zone: { only: [ :id, :name, :description ] },
+          analysis_result: { only: [ :id, :is_approved, :confidence_score, :processed_url, :issues, :feedback ] }
+        },
+        methods: [ :status_text, :user_name ]
+      ).merge({
+        "zone_id" => check.zone_id,
+        "submitted_at" => check.submitted_at,
+        "status" => check.status # Убеждаемся, что статус 2 или 3
+      })
+
+      # adapter: false — КРИТИЧЕСКИ ВАЖНО для обхода AMS гемма
+      render json: check_data, adapter: false, status: :created
+
+    rescue => e
+      Rails.logger.error "CREATE_CHECK_ERROR: #{e.message}"
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+  else
+    render json: { errors: check.errors.full_messages }, status: :unprocessable_entity
+  end
+end
 
       private
 
