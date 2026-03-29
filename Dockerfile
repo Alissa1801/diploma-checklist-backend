@@ -25,7 +25,7 @@ RUN apt-get update -qq && \
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
 
-# 3. ML: Установка PyTorch, YOLO и недостающих зависимостей
+# 3. ML: Установка PyTorch, YOLO и ВСЕХ необходимых зависимостей
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
@@ -37,8 +37,11 @@ RUN pip3 install --no-cache-dir \
     pyyaml \
     tqdm \
     matplotlib \
+    packaging \
+    pandas \
+    scipy \
     --no-deps --break-system-packages
-    
+
 # --- Build Stage ---
 FROM base AS build
 RUN apt-get update -qq && \
