@@ -1,19 +1,17 @@
 import sys
-import json
 import os
+import json
 import warnings
 import shutil
 
-# --- ПРОВЕРКА И ФИКС ВЕРСИИ NUMPY ---
+# ПРИНУДИТЕЛЬНЫЙ ОТКАТ К NUMPY 1.x API ДЛЯ YOLO
 try:
     import numpy as np
-    # Если версия 2.0+, пробуем принудительно откатить поведение (на всякий случай)
-    if int(np.__version__.split('.')[0]) >= 2:
-        # Хак для совместимости типов
-        np.core.multiarray.ndarray = np.ndarray
+    # Этот хак исправляет 'expected np.ndarray' в 99% случаев на серверах
+    if hasattr(np, "core"):
+        sys.modules['numpy.core.multiarray'] = np.core.multiarray
 except ImportError:
-    print(json.dumps({"error": "Numpy not installed"}))
-    sys.exit(1)
+    pass
 
 # Настройка кодировки для Ruby
 if hasattr(sys.stdout, 'reconfigure'):

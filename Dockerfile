@@ -22,19 +22,16 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML & Зависимости: Форсируем установку Numpy 1.x поверх любой системной версии
+2. ML: Установка строгого фундамента
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
-    pip3 install --no-cache-dir --ignore-installed \
-    numpy==1.26.4 \
+    pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
+
+# 3. ML: Установка зависимостей БЕЗ обновления существующих пакетов
+RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu --break-system-packages
-
-# 3. YOLO: Ставим строго с контролем зависимостей
-RUN pip3 install --no-cache-dir \
-    ultralytics==8.1.0 \
-    opencv-python-headless \
-    --break-system-packages
+    --index-url https://download.pytorch.org/whl/cpu --break-system-packages && \
+    pip3 install --no-cache-dir ultralytics==8.1.0 opencv-python-headless --break-system-packages
 
 # --- Build Stage ---
 FROM base AS build
