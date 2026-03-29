@@ -22,11 +22,11 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML: Установка строгого фундамента (Добавлена решетка #)
+# ML Infrastructure: Strict foundation
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
 
-# 3. ML: Установка зависимостей БЕЗ обновления существующих пакетов (Добавлена решетка #)
+# ML Dependencies: PyTorch and Ultralytics
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
