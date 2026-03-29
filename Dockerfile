@@ -22,11 +22,11 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-2. ML: Установка строгого фундамента
+# 2. ML: Установка строгого фундамента (Добавлена решетка #)
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
 
-# 3. ML: Установка зависимостей БЕЗ обновления существующих пакетов
+# 3. ML: Установка зависимостей БЕЗ обновления существующих пакетов (Добавлена решетка #)
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
@@ -71,7 +71,7 @@ RUN mkdir -p /rails/storage /rails/public/analysis /rails/db /rails/log /rails/t
 # 1. Копируем гемы
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 
-# 2. Копируем код (используем /. чтобы копировать содержимое, а не саму папку как файл)
+# 2. Копируем код
 COPY --chown=rails:rails --from=build /rails/. /rails/
 
 # Возвращаемся к пользователю rails
@@ -80,5 +80,4 @@ USER 1000:1000
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
 EXPOSE 80
-# Рекомендуется использовать полный путь для надежности
 CMD ["./bin/thrust", "./bin/rails", "server"]
