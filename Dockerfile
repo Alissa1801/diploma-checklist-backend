@@ -25,13 +25,20 @@ RUN apt-get update -qq && \
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
 
-# 3. ML: Установка PyTorch и YOLO (с запретом обновления зависимостей)
+# 3. ML: Установка PyTorch, YOLO и недостающих зависимостей
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages && \
-    pip3 install --no-cache-dir ultralytics==8.1.0 opencv-python-headless --no-deps --break-system-packages
-
+    pip3 install --no-cache-dir \
+    ultralytics==8.1.0 \
+    opencv-python-headless \
+    psutil \
+    pyyaml \
+    tqdm \
+    matplotlib \
+    --no-deps --break-system-packages
+    
 # --- Build Stage ---
 FROM base AS build
 RUN apt-get update -qq && \

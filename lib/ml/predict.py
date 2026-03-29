@@ -11,6 +11,8 @@ try:
     sys.modules['np'] = np 
     if not hasattr(np, "ndarray"):
         np.ndarray = np.array
+    if not hasattr(np, "float_"):
+        np.float_ = np.float64
     # Для новых версий Numpy регистрируем старый интерфейс в системе
     if hasattr(np, "core"):
         sys.modules['numpy.core.multiarray'] = np.core.multiarray
