@@ -17,22 +17,22 @@ RUN apt-get update -qq && \
     libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML ФИНАЛЬНОЕ РЕШЕНИЕ (БЕЗ КЭША)
-# Сначала удаляем ВСЁ, что связано с numpy, если оно попало из базовых слоев
+# 2. ML ФИНАЛЬНЫЙ РЫВОК: Очистка и установка фундамента
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
-    pip3 uninstall -y numpy --break-system-packages || true
+    pip3 uninstall -y numpy opencv-python opencv-python-headless --break-system-packages || true
 
-# Устанавливаем PyTorch
+# Устанавливаем PyTorch (кэшируемый тяжелый слой)
 RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
-# Устанавливаем ВСЕ зависимости YOLO одной командой, ВКЛЮЧАЯ старый Numpy
-# Мы ставим их БЕЗ автоматических зависимостей, чтобы никто не обновил наш Numpy
-RUN pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages && \
-    pip3 install --no-cache-dir \
+# Устанавливаем NumPy ПЕРВЫМ и СТРОГО фиксируем
+RUN pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
+
+# Устанавливаем OpenCV и YOLO БЕЗ зависимостей, чтобы они не тронули NumPy
+RUN pip3 install --no-cache-dir \
+    opencv-python-headless==4.8.1.78 \
     ultralytics==8.1.0 \
-    opencv-python-headless \
     psutil pyyaml tqdm matplotlib packaging pandas scipy pyparsing cycler kiwisolver python-dateutil six ultralytics-hub timm py-cpuinfo requests \
     --no-deps --break-system-packages
 
