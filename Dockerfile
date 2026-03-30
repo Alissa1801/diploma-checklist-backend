@@ -31,6 +31,7 @@ RUN pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+    RUN pip3 install --no-cache-dir --force-reinstall numpy==1.26.4 --break-system-packages
 
 RUN pip3 install --no-cache-dir \
     ultralytics==8.1.0 \

@@ -4,7 +4,7 @@ import json
 import warnings
 import shutil
 
-# --- ЯДЕРНЫЙ ФИКС NUMPY ДЛЯ СОВМЕСТИМОСТИ С OPENCV И YOLO ---
+# --- УЛЬТИМАТИВНЫЙ ЯДЕРНЫЙ ФИКС NUMPY 2.0 ---
 try:
     import numpy as np
     
@@ -21,23 +21,27 @@ try:
     if hasattr(np, "core"):
         sys.modules['numpy.core.multiarray'] = np.core.multiarray
     
-    # 4. Базовые алиасы типов
-    if not hasattr(np, "ndarray"): 
-        np.ndarray = np.array
+    # 4. РЕШЕНИЕ ОШИБКИ: expected np.ndarray (got numpy.ndarray)
+    # Принудительно заставляем систему считать np.ndarray базовым типом массива
+    np.ndarray = type(np.array([]))
+    
+    # 5. Базовые алиасы типов для совместимости
     if not hasattr(np, "float_"):
         np.float_ = np.float64
+    if not hasattr(np, "int_"):
+        np.int_ = np.int64
 
 except Exception as e:
-    # Если даже этот фикс упал, выводим ошибку в формате JSON для Ruby
+    # Если фикс не удался, Ruby получит понятную ошибку
     print(json.dumps({"error": f"Critical Numpy Fix Failed: {str(e)}"}))
     sys.exit(1)
 
-# Настройка вывода для корректной передачи JSON в Ruby через stdout
+# Настройка вывода для корректной передачи JSON в Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 
 warnings.filterwarnings('ignore')
 
-# Только теперь, когда Numpy подготовлен, импортируем YOLO
+# Импорт YOLO только после того, как Numpy "исправлен"
 try:
     from ultralytics import YOLO
 except ImportError as e:
@@ -72,22 +76,23 @@ def run_prediction(image_path, model_path):
         )
         
         result = results[0]
+        # Безопасное извлечение имен классов
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # 4. Логика оценки качества (отель)
+        # 4. Логика оценки качества
         conf_value = 0.0
         if len(result.boxes.conf) > 0:
-            # Извлекаем чистое число из тензора PyTorch
+            # .item() превращает тензор PyTorch в обычное число Python
             conf_value = float(result.boxes.conf.mean().item()) * 100
 
-        # Список меток, которые считаются нарушением
+        # Список меток-нарушений
         bad_stuff = ['pillow_messy', 'trash', 'dirty_floor', 'messy_bed'] 
         found_issues = [cls for cls in detected_classes if cls in bad_stuff]
         
         is_approved = len(found_issues) == 0
         output_filename = os.path.basename(result.path)
 
-        # 5. Формирование финального JSON для Ruby-сервиса
+        # 5. Формирование JSON для Ruby
         output = {
             "is_approved": is_approved,
             "confidence": round(conf_value, 2),
@@ -97,13 +102,12 @@ def run_prediction(image_path, model_path):
             "processed_url": f"/analysis/predict/{output_filename}"
         }
         
-        # Печатаем ТОЛЬКО JSON в stdout
+        # Вывод результата
         print(json.dumps(output, ensure_ascii=False))
         sys.stdout.flush()
         
     except Exception as e:
-        error_output = {"error": str(e)}
-        print(json.dumps(error_output, ensure_ascii=False))
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
         sys.stdout.flush()
 
 if __name__ == "__main__":
