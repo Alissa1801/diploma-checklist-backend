@@ -21,10 +21,20 @@ RUN apt-get update -qq && \
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 uninstall -y numpy opencv-python opencv-python-headless --break-system-packages || true
 
-# Устанавливаем PyTorch (кэшируемый тяжелый слой)
+## 3. ML: Установка PyTorch, YOLO и ВСЕХ системных зависимостей
 RUN pip3 install --no-cache-dir \
-    torch==2.2.0+cpu torchvision==0.17.0+cpu \
+    torch==2.2.0+cpu \
+    torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+
+# Добавляем hub-sdk и ultralytics-hub в список
+RUN pip3 install --no-cache-dir \
+    ultralytics==8.1.0 \
+    opencv-python-headless==4.8.1.78 \
+    psutil pyyaml tqdm matplotlib packaging pandas scipy pyparsing \
+    cycler kiwisolver python-dateutil six \
+    hub-sdk ultralytics-hub py-cpuinfo requests timm \
+    --no-deps --break-system-packages
 
 # Устанавливаем NumPy ПЕРВЫМ и СТРОГО фиксируем
 RUN pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
