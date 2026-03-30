@@ -4,24 +4,12 @@ import json
 import warnings
 import shutil
 
-# --- ТОТАЛЬНЫЙ ФИКС ПРОСТРАНСТВА ИМЕН И ТИПОВ ---
+# --- ФИКС ТИПОВ ДАННЫХ ---
 try:
     import numpy as np
-    # Исправляет ошибку "expected np.ndarray (got numpy.ndarray)"
     sys.modules['np'] = np 
-    if not hasattr(np, "ndarray"):
-        np.ndarray = np.array
-    if not hasattr(np, "float_"):
-        np.float_ = np.float64
-    # Для новых версий Numpy регистрируем старый интерфейс в системе
-    if hasattr(np, "core"):
-        sys.modules['numpy.core.multiarray'] = np.core.multiarray
-except ImportError:
-    print(json.dumps({"error": "Numpy failure"}))
-    sys.exit(1)
-
-try:
-    import cpuinfo
+    if not hasattr(np, "ndarray"): np.ndarray = np.array
+    if hasattr(np, "core"): sys.modules['numpy.core.multiarray'] = np.core.multiarray
 except ImportError:
     pass
 
@@ -34,10 +22,8 @@ from ultralytics import YOLO
 
 def run_prediction(image_path, model_path):
     try:
-        # 1. Загрузка модели
         model = YOLO(model_path)
         
-        # 2. Настройка путей
         base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         project_path = os.path.join(base_path, "public", "analysis")
         
@@ -48,7 +34,6 @@ def run_prediction(image_path, model_path):
         if os.path.exists(save_dir):
             shutil.rmtree(save_dir)
         
-        # 3. Запуск предсказания
         results = model.predict(
             source=image_path, 
             conf=0.25, 
@@ -62,7 +47,6 @@ def run_prediction(image_path, model_path):
         result = results[0]
         detected_classes = [model.names[int(c)] for c in result.boxes.cls]
         
-        # Расчет уверенности (извлекаем чистый float из тензора)
         conf_value = 0.0
         if len(result.boxes.conf) > 0:
             conf_value = float(result.boxes.conf.mean().item()) * 100
@@ -73,7 +57,6 @@ def run_prediction(image_path, model_path):
         is_approved = len(found_issues) == 0
         output_filename = os.path.basename(result.path)
 
-        # 4. Формируем JSON (строгие типы данных)
         output = {
             "is_approved": is_approved,
             "confidence": round(conf_value, 2),

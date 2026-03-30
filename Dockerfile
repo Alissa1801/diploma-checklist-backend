@@ -21,47 +21,23 @@ RUN apt-get update -qq && \
     ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. ML: Фиксируем Numpy
+# 2. ML: Установка PyTorch (тяжелый слой, кэшируем его)
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
-    pip3 install --no-cache-dir numpy==1.26.4 --break-system-packages
-
-# 3. ML: Установка PyTorch, YOLO и ПОЛНОГО набора зависимостей
-RUN pip3 install --no-cache-dir \
+    pip3 install --no-cache-dir \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
-# 3. ML: Установка PyTorch, YOLO и ВСЕХ зависимостей
-RUN pip3 install --no-cache-dir \
-    torch==2.2.0+cpu \
-    torchvision==0.17.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu --break-system-packages && \
-    pip3 install --no-cache-dir \
-    ultralytics==8.1.0 \
-    opencv-python-headless \
-    psutil \
-    pyyaml \
-    tqdm \
-    matplotlib \
-    packaging \
-    pandas \
-    scipy \
-    pyparsing \
-    cycler \
-    kiwisolver \
-    python-dateutil \
-    six \
-    ultralytics-hub \
-    timm \
-    py-cpuinfo \
-    requests \
-    --no-deps --break-system-packages
+# 3. ML: Установка YOLO и ПРИНУДИТЕЛЬНЫЙ откат Numpy
+# Мы ставим YOLO со всеми зависимостями (чтобы были hub_sdk, cpuinfo и т.д.), 
+# а потом затираем версию Numpy на ту, что нам нужна.
+RUN pip3 install --no-cache-dir ultralytics==8.1.0 opencv-python-headless --break-system-packages && \
+    pip3 install --no-cache-dir --force-reinstall numpy==1.26.4 --break-system-packages
 
 # --- Build Stage ---
 FROM base AS build
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y \
-    build-essential git libpq-dev libyaml-dev pkg-config && \
+    apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY Gemfile Gemfile.lock ./
