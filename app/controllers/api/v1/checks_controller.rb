@@ -11,52 +11,28 @@ module Api
 
       MAX_FILE_SIZE = 5.megabytes
 
-      def index
-        @checks = current_user.admin? ? Check.all : current_user.checks
-        checks_base = @checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
+      # app/controllers/api/v1/checks_controller.rb
 
-        LoggingService.log_user_action(current_user, "get_checks_list", {
-          count: checks_base.count,
-          is_admin: current_user.admin?
-        })
+def index
+  @checks = current_user.admin? ? Check.all : current_user.checks
+  # Оставляем includes для скорости, это правильно
+  checks_base = @checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
 
-        checks_data = checks_base.map do |check|
-          check.as_json(
-            include: {
-              zone: { only: [ :id, :name, :description ] },
-              analysis_result: {}
-            },
-            methods: [ :user_name, :status_text ]
-          ).merge({
-            "zone_id" => check.zone_id,
-            "submitted_at" => check.submitted_at,
-            "created_at" => check.created_at
-          })
-        end
+  LoggingService.log_user_action(current_user, "get_checks_list", {
+    count: checks_base.count,
+    is_admin: current_user.admin?
+  })
 
-        render json: checks_data, adapter: false
-      end
+  # ИСПОЛЬЗУЕМ СЕРИАЛИЗАТОРЫ:
+  render json: checks_base, each_serializer: CheckSerializer, base_url: request.base_url
+end
 
-      def show
-        check = current_user.admin? ? Check.find(params[:id]) : current_user.checks.find(params[:id])
-
-        check_data = check.as_json(
-          include: {
-            zone: { only: [ :id, :name, :description ] },
-            analysis_result: {}
-          },
-          methods: [ :user_name, :status_text ]
-        ).merge({
-          "zone_id" => check.zone_id,
-          "submitted_at" => check.submitted_at,
-          "created_at" => check.created_at
-        })
-
-        render json: check_data, adapter: false
-      rescue ActiveRecord::RecordNotFound => e
-        Rails.logger.warn "NOT_FOUND_ISSUE: #{e.message}"
-        render json: { error: "Check not found" }, status: :not_found
-      end
+def show
+  check = current_user.admin? ? Check.find(params[:id]) : current_user.checks.find(params[:id])
+  
+  # ИСПОЛЬЗУЕМ СЕРИАЛИЗАТОР:
+  render json: check, serializer: CheckSerializer, base_url: request.base_url
+end
 
       def create
         check = current_user.checks.new(check_params)
@@ -101,7 +77,7 @@ module Api
         Check.destroy_all
         render json: { status: "Database cleared!" }
       end
-      
+
       private
 
       def render_check_json(check, status)
