@@ -5,6 +5,9 @@ import warnings
 import shutil
 import numpy as np
 
+np.ndarray = type(np.array([]))
+sys.modules['np'] = np
+
 # Настройка вывода для корректного захвата данных сервисом Ruby
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8') 

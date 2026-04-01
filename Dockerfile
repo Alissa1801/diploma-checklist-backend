@@ -1,35 +1,45 @@
 # syntax=docker/dockerfile:1
-FROM ultralytics/ultralytics:latest-cpu AS base
+ARG RUBY_VERSION=3.2.2
+FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
-USER root
 WORKDIR /rails
 
-# 1. Системные пакеты (добавляем ruby-dev для компиляции гемов)
+# 1. СИСТЕМНЫЕ ПАКЕТЫ (включая Python для YOLO)
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    ruby ruby-dev build-essential libpq-dev git curl postgresql-client libvips libjemalloc2 && \
+    curl libjemalloc2 libvips postgresql-client \
+    python3 python3-pip python3-setuptools \
+    libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. Установка Bundler (БЕЗ обновления системы)
-# Используем --no-document для скорости и обходим APT
-RUN gem install bundler -v 2.4.10 --no-document
+# 2. УСТАНОВКА ML (YOLO) В СИСТЕМУ
+# Ставим строго те версии, которые "дружат" с Ruby и не ломают Numpy
+RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
+    pip3 install --no-cache-dir \
+    torch==2.2.0+cpu \
+    torchvision==0.17.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu --break-system-packages && \
+    pip3 install --no-cache-dir \
+    ultralytics==8.1.0 \
+    numpy==1.26.4 \
+    opencv-python-headless==4.8.1.78 \
+    --break-system-packages
 
 ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \
-    LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+    BUNDLE_WITHOUT="development test"
 
 # --- Build Stage ---
 FROM base AS build
 
-# Копируем только гемфайлы
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config
+
 COPY Gemfile Gemfile.lock ./
 
-# 3. КРИТИЧЕСКИЙ ХАК: Очистка Lock-файла перед установкой
-# Удаляем секцию BUNDLED WITH и лишние платформы, чтобы не путать старый RubyGems
+# Хак для Bundler, чтобы он не искал версию 4.0.8
 RUN sed -i '/BUNDLED WITH/,+1d' Gemfile.lock && \
-    bundle config set --local deployment 'true' && \
-    bundle config set --local without 'development test' && \
     bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
@@ -38,9 +48,11 @@ RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
 # --- Final Stage ---
 FROM base
+
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
 
+USER root
 RUN mkdir -p storage public/analysis db log tmp && \
     chown -R rails:rails /rails storage public/analysis db log tmp && \
     chmod -R 775 /rails storage public/analysis db log tmp
@@ -49,6 +61,6 @@ COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=rails:rails --from=build /rails /rails
 
 USER 1000:1000
-EXPOSE 80
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
+EXPOSE 80
 CMD ["./bin/thrust", "./bin/rails", "server"]
