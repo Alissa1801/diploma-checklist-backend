@@ -1,19 +1,18 @@
 # syntax=docker/dockerfile:1
-# Используем официальный образ Ultralytics как фундамент
 FROM ultralytics/ultralytics:latest-cpu AS base
 
 USER root
 WORKDIR /rails
 
-# 1. Установка системных пакетов для Ruby и Rails
+# 1. Системные пакеты (добавляем ruby-dev для компиляции гемов)
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-    ruby-full build-essential libpq-dev git curl postgresql-client libvips libjemalloc2 && \
+    ruby ruby-dev build-essential libpq-dev git curl postgresql-client libvips libjemalloc2 && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# 2. Исправление менеджера гемов (Убирает ошибку nil:NilClass)
-RUN gem update --system && \
-    gem install bundler -v 2.4.10
+# 2. Установка Bundler (БЕЗ обновления системы)
+# Используем --no-document для скорости и обходим APT
+RUN gem install bundler -v 2.4.10 --no-document
 
 ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
@@ -23,10 +22,14 @@ ENV RAILS_ENV="production" \
 # --- Build Stage ---
 FROM base AS build
 
+# Копируем только гемфайлы
 COPY Gemfile Gemfile.lock ./
 
-# 3. ХАК: Удаляем привязку к странной версии 4.0.8 и ставим гемы
+# 3. КРИТИЧЕСКИЙ ХАК: Очистка Lock-файла перед установкой
+# Удаляем секцию BUNDLED WITH и лишние платформы, чтобы не путать старый RubyGems
 RUN sed -i '/BUNDLED WITH/,+1d' Gemfile.lock && \
+    bundle config set --local deployment 'true' && \
+    bundle config set --local without 'development test' && \
     bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
