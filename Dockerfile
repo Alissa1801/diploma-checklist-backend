@@ -1,80 +1,65 @@
 # syntax=docker/dockerfile:1
-ARG RUBY_VERSION=3.2.2
-FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
+
+# 1. БАЗОВЫЙ ОБРАЗ: Используем официальную среду Ultralytics (CPU-версия)
+# В ней УЖЕ установлены Python, PyTorch, OpenCV и ПРАВИЛЬНЫЙ NumPy.
+FROM ultralytics/ultralytics:latest-cpu AS base
 
 WORKDIR /rails
 
+# 2. УСТАНОВКА RUBY И ЗАВИСИМОСТЕЙ
+# Устанавливаем Ruby и системные пакеты прямо в среду Ultralytics
+USER root
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+    ruby-full \
+    build-essential \
+    libpq-dev \
+    git \
+    curl \
+    postgresql-client \
+    libvips \
+    libjemalloc2 && \
+    gem install bundler:2.4.10 && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Настройка переменных окружения для Rails
 ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="development" \
-    LD_PRELOAD="/usr/local/lib/libjemalloc.so"
+    LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
 
-# 1. СИСТЕМНЫЕ ПАКЕТЫ
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y \
-    curl libjemalloc2 libvips postgresql-client \
-    python3 python3-pip python3-venv python3-setuptools \
-    libgl1 libglib2.0-0 && \
-    ln -sf /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
-
-# 2. ML: СОЗДАНИЕ ИЗОЛИРОВАННОГО ОКРУЖЕНИЯ (VENV)
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# Обновляем pip и ставим зависимости строго в venv
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    torch==2.2.0+cpu \
-    torchvision==0.17.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
-
-# Устанавливаем NumPy ПЕРВЫМ
-RUN pip install --no-cache-dir numpy==1.26.4
-
-# Устанавливаем YOLO и OpenCV (теперь без --no-deps, venv сам все разрулит)
-RUN pip install --no-cache-dir \
-    ultralytics==8.1.0 \
-    opencv-python-headless==4.8.1.78 \
-    hub-sdk \
-    py-cpuinfo \
-    requests
-
-# --- Build Stage ---
+# --- Build Stage (Сборка гемов) ---
 FROM base AS build
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY Gemfile Gemfile.lock ./
 RUN bundle install && \
-    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
-    bundle exec bootsnap precompile -j 1 --gemfile
+    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
 COPY . .
+# Предкомпиляция bootsnap для ускорения запуска
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
-# --- Final Stage ---
+# --- Final Stage (Финальный образ) ---
 FROM base
+
+# Создаем пользователя rails (хотя в этом образе можно работать и под root, сделаем по стандарту)
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
 
-USER root
-RUN mkdir -p /rails/storage /rails/public/analysis /rails/db /rails/log /rails/tmp && \
+# Создаем необходимые директории
+RUN mkdir -p storage public/analysis db log tmp && \
     chown -R rails:rails /rails && \
-    chmod -R 775 /rails
+    chmod -R 775 /rails storage public/analysis db log tmp
 
-# Копируем и venv, и приложение
-COPY --chown=rails:rails --from=build /opt/venv /opt/venv
+# Копируем установленные гемы и код приложения
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
-COPY --chown=rails:rails --from=build /rails/. /rails/
+COPY --chown=rails:rails --from=build /rails /rails
 
-# Убеждаемся, что PATH для venv прописан и в финальном образе
-ENV PATH="/opt/venv/bin:$PATH"
+# Проверка NumPy в логах билда (чтобы убедиться, что он на месте)
+RUN python3 -c "import numpy; print(f'BUILD_LOG: NumPy version is {numpy.__version__}')"
 
 USER 1000:1000
-ENTRYPOINT ["/rails/bin/docker-entrypoint"]
+
 EXPOSE 80
+ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 CMD ["./bin/thrust", "./bin/rails", "server"]
