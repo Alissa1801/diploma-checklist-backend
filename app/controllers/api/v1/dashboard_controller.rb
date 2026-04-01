@@ -270,7 +270,7 @@ end
           user_email: target_user&.email || 'Unknown',
           user_name: target_user&.full_name || 'Unknown',
           zone_name: check.zone&.name || 'Unknown',
-          status: check.analysis_result&.approved? ? 'approved' : (check.analysis_result ? 'rejected' : 'pending'),
+          status: check.status,
           score: check.analysis_result&.confidence_score,
           has_photo: check.photo.attached?,
           photo_url: check.photo.attached? ? rails_blob_url(check.photo) : nil,
