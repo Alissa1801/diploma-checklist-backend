@@ -28,9 +28,9 @@ RUN sed -i '/BUNDLED WITH/,+1d' Gemfile.lock && \
 COPY . .
 
 # 5. УСТАНОВКА ML (Исправленный поиск пакетов)
+# МЫ ИСПОЛЬЗУЕМ --extra-index-url, чтобы видеть и обычные пакеты, и Torch
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir --break-system-packages \
-    # Сначала указываем основной репозиторий, затем дополнительный для Torch
     --extra-index-url https://download.pytorch.org/whl/cpu \
     numpy==1.26.4 \
     torch==2.2.0+cpu \
