@@ -27,15 +27,16 @@ RUN sed -i '/BUNDLED WITH/,+1d' Gemfile.lock && \
 # 4. Копируем всё приложение
 COPY . .
 
-# 5. УСТАНОВКА ML (Делаем это в финальном слое, чтобы ничего не пропало)
+# 5. УСТАНОВКА ML (Исправленный поиск пакетов)
 RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir --break-system-packages \
-    --index-url https://download.pytorch.org/whl/cpu \
+    # Сначала указываем основной репозиторий, затем дополнительный для Torch
+    --extra-index-url https://download.pytorch.org/whl/cpu \
     numpy==1.26.4 \
     torch==2.2.0+cpu \
     torchvision==0.17.0+cpu \
-    ultralytics==8.1.0 \
-    opencv-python-headless==4.8.1.78
+    ultralytics \
+    opencv-python-headless
 
 # 6. Подготовка папок и прав
 RUN groupadd --system --gid 1000 rails && \
