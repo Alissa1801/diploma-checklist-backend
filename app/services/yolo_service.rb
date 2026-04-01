@@ -27,18 +27,17 @@ class YoloService
         temp_photo.flush
       end
 
-      # 3. Настройка окружения Python (КРИТИЧЕСКИЙ ФИКС ДЛЯ NUMPY)
-      # Явно указываем пути, куда pip3 ставит пакеты в Debian/Ubuntu
-      python_env = { 
-        "PYTHONPATH" => "/opt/python_libs",
-        "PYTHONUNBUFFERED" => "1" 
-      }
-      
+      # 3. Запуск анализа
+      # Вызываем напрямую, так как библиотеки теперь установлены глобально в системе
       command = "python3 #{script_path} #{temp_photo.path} #{model_path} 2>&1"
-      stdout, stderr, status = Open3.capture3(python_env, command)
+
+      Rails.logger.info "ML_EXECUTION: Starting analysis for Check ##{@check.id}"
+      
+      # Запускаем Python. Open3 захватит весь вывод (stdout + stderr)
+      stdout, stderr, status = Open3.capture3(command)
 
       if status.success?
-        # Ищем JSON-блок в выводе (игнорируя возможные системные варнинги Python)
+        # Ищем JSON-блок в выводе
         json_match = stdout.match(/(\{.*\})/m)
 
         if json_match
@@ -50,7 +49,7 @@ class YoloService
               return nil
             end
 
-            # 4. Сохранение результата в транзакции
+            # 4. Сохранение результата в базу
             AnalysisResult.transaction do
               analysis = AnalysisResult.create!(
                 check: @check,
@@ -73,23 +72,21 @@ class YoloService
               analysis
             end
           rescue JSON::ParserError => e
-            Rails.logger.error "ML_JSON_PARSE_ERROR: Output was not valid JSON. Raw output: #{stdout}"
+            Rails.logger.error "ML_JSON_PARSE_ERROR: Failed to parse Python output. Raw: #{stdout}"
             nil
           end
         else
-          Rails.logger.error "ML_OUTPUT_ERROR: Python script finished but didn't return JSON. Output: #{stdout}"
+          Rails.logger.error "ML_OUTPUT_ERROR: Python executed but no JSON found. Output: #{stdout}"
           nil
         end
       else
-        # Выводим подробную ошибку (теперь благодаря 2>&1 тут будет ModuleNotFoundError, если он случится)
-        Rails.logger.error "PYTHON_EXECUTION_ERROR: Exit code #{status.exitstatus}. Full Output: #{stdout}"
+        Rails.logger.error "PYTHON_EXECUTION_ERROR: Status #{status.exitstatus}. Output: #{stdout}"
         nil
       end
     rescue => e
-      Rails.logger.error "YOLO_SERVICE_EXCEPTION: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
+      Rails.logger.error "YOLO_SERVICE_EXCEPTION: #{e.message}\n#{e.backtrace.first(3).join("\n")}"
       nil
     ensure
-      # Всегда закрываем и удаляем временный файл
       if temp_photo
         temp_photo.close
         temp_photo.unlink
