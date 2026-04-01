@@ -25,6 +25,8 @@ RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     find /usr/local/lib/python3*/dist-packages -name "tests" -type d -exec rm -rf {} + || true && \
     rm -rf /root/.cache/pip
 
+    RUN apt-get update -qq && apt-get install -y python3-pkg-resources && rm -rf /var/lib/apt/lists/*
+
 ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_PATH="/usr/local/bundle" \

@@ -9,17 +9,17 @@ class YoloService
   end
 
   def save_result
-    # Создаем папку для обработанных изображений, если её нет
+    # 1. Подготовка папок и путей
     FileUtils.mkdir_p(Rails.root.join("public", "analysis"))
 
     return nil unless @check.photo.attached? || @direct_path
 
     model_path = Rails.root.join("lib", "ml", "best.pt").to_s
     script_path = Rails.root.join("lib", "ml", "predict.py").to_s
-    temp_photo = Tempfile.new([ "check_photo", ".jpg" ], binmode: true)
+    temp_photo = Tempfile.new([ "check_photo_#{@check.id}_", ".jpg" ], binmode: true)
 
     begin
-      # 1. Подготовка файла для анализа
+      # 2. Копирование фото во временный файл для Python
       if @direct_path && File.exist?(@direct_path)
         FileUtils.cp(@direct_path, temp_photo.path)
       else
@@ -27,15 +27,23 @@ class YoloService
         temp_photo.flush
       end
 
-      # 2. Формирование команды с захватом всех потоков (2>&1)
-      # Это критично, чтобы видеть системные ошибки Python в логах Rails
+      # 3. Настройка окружения Python (КРИТИЧЕСКИЙ ФИКС ДЛЯ NUMPY)
+      # Явно указываем пути, куда pip3 ставит пакеты в Debian/Ubuntu
+      python_env = { 
+        "PYTHONPATH" => "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages",
+        "PYTHONUNBUFFERED" => "1" 
+      }
+
+      # Формируем команду с перенаправлением ошибок в стандартный поток (2>&1)
       command = "python3 #{script_path} #{temp_photo.path} #{model_path} 2>&1"
 
-      Rails.logger.info "ML_EXECUTION: Running command for Check ##{@check.id}"
-      stdout, stderr, status = Open3.capture3(command)
+      Rails.logger.info "ML_EXECUTION: Starting analysis for Check ##{@check.id}"
+      
+      # Запускаем Python с передачей окружения
+      stdout, stderr, status = Open3.capture3(python_env, command)
 
       if status.success?
-        # Ищем JSON в выводе (на случай, если Python вывел лишние системные строки)
+        # Ищем JSON-блок в выводе (игнорируя возможные системные варнинги Python)
         json_match = stdout.match(/(\{.*\})/m)
 
         if json_match
@@ -47,7 +55,7 @@ class YoloService
               return nil
             end
 
-            # 3. Сохранение результата в базу данных
+            # 4. Сохранение результата в транзакции
             AnalysisResult.transaction do
               analysis = AnalysisResult.create!(
                 check: @check,
@@ -60,35 +68,37 @@ class YoloService
                 ml_model_version: "yolov8_hotel_v1.0"
               )
 
-              # Обновляем статус основного чека (2 - Approved, 3 - Rejected)
+              # Обновляем статус: 2 - Одобрено, 3 - Отклонено
               @check.update!(
                 status: result_data["is_approved"] ? 2 : 3,
                 score: result_data["confidence"]
               )
 
-              Rails.logger.info "YOLO_SUCCESS: Check ##{@check.id} processed successfully"
+              Rails.logger.info "YOLO_SUCCESS: Check ##{@check.id} processed"
               analysis
             end
           rescue JSON::ParserError => e
-            Rails.logger.error "ML_JSON_PARSE_ERROR: Failed to parse Python output. Raw: #{stdout}"
+            Rails.logger.error "ML_JSON_PARSE_ERROR: Output was not valid JSON. Raw output: #{stdout}"
             nil
           end
         else
-          Rails.logger.error "ML_OUTPUT_ERROR: Python executed but no JSON found. Output: #{stdout}"
+          Rails.logger.error "ML_OUTPUT_ERROR: Python script finished but didn't return JSON. Output: #{stdout}"
           nil
         end
       else
-        # Благодаря 2>&1, подробности ошибки теперь будут в stdout
-        Rails.logger.error "PYTHON_EXECUTION_ERROR: Status: #{status.exitstatus}. Output: #{stdout}"
+        # Выводим подробную ошибку (теперь благодаря 2>&1 тут будет ModuleNotFoundError, если он случится)
+        Rails.logger.error "PYTHON_EXECUTION_ERROR: Exit code #{status.exitstatus}. Full Output: #{stdout}"
         nil
       end
     rescue => e
-      Rails.logger.error "YOLO_SERVICE_EXCEPTION: #{e.message}\n#{e.backtrace.join("\n")}"
+      Rails.logger.error "YOLO_SERVICE_EXCEPTION: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       nil
     ensure
-      # Всегда удаляем временный файл
-      temp_photo.close
-      temp_photo.unlink if temp_photo
+      # Всегда закрываем и удаляем временный файл
+      if temp_photo
+        temp_photo.close
+        temp_photo.unlink
+      end
     end
   end
 end
