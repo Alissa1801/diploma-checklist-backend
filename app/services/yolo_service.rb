@@ -58,7 +58,7 @@ class YoloService
                 detected_objects: result_data["objects"],
                 issues: result_data["issues"],
                 feedback: result_data["feedback"],
-                #processed_url: result_data["processed_url"],
+                processed_url: result_data["processed_url"],
                 ml_model_version: "yolov8_hotel_v1.0"
               )
 
