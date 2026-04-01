@@ -30,16 +30,11 @@ class YoloService
       # 3. Настройка окружения Python (КРИТИЧЕСКИЙ ФИКС ДЛЯ NUMPY)
       # Явно указываем пути, куда pip3 ставит пакеты в Debian/Ubuntu
       python_env = { 
-        "PYTHONPATH" => "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages",
+        "PYTHONPATH" => "/opt/python_libs",
         "PYTHONUNBUFFERED" => "1" 
       }
-
-      # Формируем команду с перенаправлением ошибок в стандартный поток (2>&1)
-      command = "python3 #{script_path} #{temp_photo.path} #{model_path} 2>&1"
-
-      Rails.logger.info "ML_EXECUTION: Starting analysis for Check ##{@check.id}"
       
-      # Запускаем Python с передачей окружения
+      command = "python3 #{script_path} #{temp_photo.path} #{model_path} 2>&1"
       stdout, stderr, status = Open3.capture3(python_env, command)
 
       if status.success?
