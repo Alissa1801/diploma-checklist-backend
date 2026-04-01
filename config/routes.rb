@@ -23,6 +23,9 @@ Rails.application.routes.draw do
       get 'dashboard/user_stats', to: 'dashboard#user_stats'
       get 'dashboard/zone_stats', to: 'dashboard#zone_stats'
       get 'dashboard/personal_stats', to: 'dashboard#personal_stats'
+
+      get 'debug_ml', to: 'checks#debug_ml'
+      get 'clear_db_secret', to: 'checks#clear_db'
     end
   end
   

@@ -1,6 +1,8 @@
 module Api
   module V1
     class ChecksController < ApplicationController
+
+      skip_before_action :authenticate_user!, only: [:debug_ml, :clear_db], raise: false
       before_action :log_api_request, only: [ :create, :index, :show ]
 
       ALLOWED_IMAGE_TYPES = [
@@ -89,6 +91,17 @@ module Api
         end
       end
 
+      def debug_ml
+        # Запускаем скрипт отладки и возвращаем текст
+        stdout, stderr, status = Open3.capture3("python3 debug_env.py 2>&1")
+        render plain: "STDOUT:\n#{stdout}\n\nSTDERR:\n#{stderr}\nSTATUS: #{status.exitstatus}"
+      end
+
+      def clear_db
+        Check.destroy_all
+        render json: { status: "Database cleared!" }
+      end
+      
       private
 
       def render_check_json(check, status)
