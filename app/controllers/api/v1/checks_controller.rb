@@ -11,27 +11,24 @@ module Api
 
       MAX_FILE_SIZE = 5.megabytes
 
-      # app/controllers/api/v1/checks_controller.rb
-
 def index
-  @checks = current_user.admin? ? Check.all : current_user.checks
-  # Оставляем includes для скорости, это правильно
-  checks_base = @checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
+  # 1. Загружаем данные с оптимизацией (чтобы не было 100500 запросов к БД)
+  checks = current_user.admin? ? Check.all : current_user.checks
+  @checks = checks.includes(:zone, :analysis_result, :user).order(created_at: :desc)
 
-  LoggingService.log_user_action(current_user, "get_checks_list", {
-    count: checks_base.count,
-    is_admin: current_user.admin?
-  })
-
-  # ИСПОЛЬЗУЕМ СЕРИАЛИЗАТОРЫ:
-  render json: checks_base, each_serializer: CheckSerializer, base_url: request.base_url
+  # 2. Рендерим через сериализатор. 
+  # base_url нужен твоему AnalysisResultSerializer, чтобы собрать полную ссылку на фото
+  render json: @checks, 
+         each_serializer: CheckSerializer, 
+         base_url: "https://diploma-checklist-backend-production.up.railway.app"
 end
 
 def show
-  check = current_user.admin? ? Check.find(params[:id]) : current_user.checks.find(params[:id])
+  @check = current_user.admin? ? Check.find(params[:id]) : current_user.checks.find(params[:id])
   
-  # ИСПОЛЬЗУЕМ СЕРИАЛИЗАТОР:
-  render json: check, serializer: CheckSerializer, base_url: request.base_url
+  render json: @check, 
+         serializer: CheckSerializer, 
+         base_url: "https://diploma-checklist-backend-production.up.railway.app"
 end
 
       def create

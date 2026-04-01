@@ -74,6 +74,7 @@ module Api
           quality: {
             average_score: avg_score,
             checks_with_photo: checks_with_photo,
+            total_photos: checks_with_photo,
             photos_per_check: total_checks > 0 ? (checks_with_photo.to_f / total_checks).round(2) : 0
           },
           users: {
