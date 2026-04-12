@@ -32,7 +32,7 @@ class YoloService
       command = "python3 #{script_path} #{temp_photo.path} #{model_path} 2>&1"
 
       Rails.logger.info "ML_EXECUTION: Starting analysis for Check ##{@check.id}"
-      
+
       # Запускаем Python. Open3 захватит весь вывод (stdout + stderr)
       stdout, stderr, status = Open3.capture3(command)
 
@@ -49,28 +49,40 @@ class YoloService
               return nil
             end
 
-            # 4. Сохранение результата в базу
-            AnalysisResult.transaction do
-              analysis = AnalysisResult.create!(
-                check: @check,
-                is_approved: result_data["is_approved"],
-                confidence_score: result_data["confidence"],
-                detected_objects: result_data["objects"],
-                issues: result_data["issues"],
-                feedback: result_data["feedback"],
-                processed_url: result_data["processed_url"],
-                ml_model_version: "yolov8_hotel_v1.0"
-              )
+# 4. Сохранение результата в базу
+AnalysisResult.transaction do
+  # Проверяем наличие колонки перед сохранением, чтобы не падало
+  if AnalysisResult.column_names.include?("processed_url")
+    analysis = AnalysisResult.create!(
+      check: @check,
+      is_approved: result_data["is_approved"],
+      confidence_score: result_data["confidence"],
+      detected_objects: result_data["objects"],
+      issues: result_data["issues"],
+      feedback: result_data["feedback"],
+      processed_url: result_data["processed_url"], # Это поле упадет, если миграция не прошла
+      ml_model_version: "yolov8_hotel_v1.0"
+    )
+  else
+    # Резервный вариант, если миграция еще не доехала
+    Rails.logger.warn "MIGRATION_MISSING: Column processed_url not found in DB!"
+    analysis = AnalysisResult.create!(
+      check: @check,
+      is_approved: result_data["is_approved"],
+      confidence_score: result_data["confidence"],
+      detected_objects: result_data["objects"],
+      issues: result_data["issues"],
+      feedback: result_data["feedback"],
+      ml_model_version: "yolov8_hotel_v1.0"
+    )
+  end
 
-              # Обновляем статус: 2 - Одобрено, 3 - Отклонено
-              @check.update!(
-                status: result_data["is_approved"] ? 2 : 3,
-                score: result_data["confidence"]
-              )
-
-              Rails.logger.info "YOLO_SUCCESS: Check ##{@check.id} processed"
-              analysis
-            end
+  @check.update!(
+    status: result_data["is_approved"] ? 2 : 3,
+    score: result_data["confidence"]
+  )
+  analysis
+end
           rescue JSON::ParserError => e
             Rails.logger.error "ML_JSON_PARSE_ERROR: Failed to parse Python output. Raw: #{stdout}"
             nil
